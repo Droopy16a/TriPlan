@@ -1,6 +1,22 @@
 package com.triplane.core.ai
 
 import kotlinx.serialization.Serializable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+
+@Serializable
+data class Expense(
+    val id: String,
+    val emoji: String,
+    val title: String,
+    val subtitle: String,
+    val amount: Double,
+    val date: String,
+    val payer: String = "Me",
+    val participants: List<String> = emptyList()
+)
 
 /**
  * A saved trip that can be displayed as a HeroTripCard on the home screen.
@@ -14,8 +30,11 @@ data class SavedTrip(
     val dates: String,
     val travelers: String,
     val budget: String,
+    val preferences: String = "",
     val emoji: String = "✈️",
-    val itinerary: TripItinerary? = null
+    val itinerary: TripItinerary? = null,
+    val expenses: List<Expense> = emptyList(),
+    val memberNames: List<String> = emptyList()
 )
 
 /**
@@ -23,16 +42,87 @@ data class SavedTrip(
  * Exposed as a singleton so both HomeViewModel and the trip screen can access it.
  */
 object TripRepository {
-    private val _trips = mutableListOf<SavedTrip>()
-    val trips: List<SavedTrip> get() = _trips.toList()
+    private val defaultKyoto = SavedTrip(
+        id = "default-kyoto",
+        title = "Kyoto 2026",
+        destination = "Kyoto, Japan",
+        dates = "Oct 12 - Oct 24",
+        travelers = "2",
+        budget = "$ 2,500",
+        emoji = "⛩️",
+        itinerary = null, // Can be null for the static fallback
+        memberNames = listOf("Me", "member 1")
+    )
+
+    private val _trips = MutableStateFlow<List<SavedTrip>>(listOf(defaultKyoto))
+    val trips: StateFlow<List<SavedTrip>> = _trips.asStateFlow()
 
     fun save(trip: SavedTrip) {
-        // Replace if same destination already exists, otherwise add
-        val idx = _trips.indexOfFirst { it.id == trip.id }
-        if (idx >= 0) _trips[idx] = trip else _trips.add(0, trip)
+        _trips.update { current ->
+            val idx = current.indexOfFirst { it.id == trip.id }
+            if (idx >= 0) {
+                current.toMutableList().apply { this[idx] = trip }.toList()
+            } else {
+                listOf(trip) + current
+            }
+        }
     }
 
-    fun getById(id: String): SavedTrip? = _trips.find { it.id == id }
+    fun addExpense(tripId: String, expense: Expense) {
+        _trips.update { current ->
+            current.map { trip ->
+                if (trip.id == tripId) {
+                    trip.copy(expenses = trip.expenses + expense)
+                } else {
+                    trip
+                }
+            }
+        }
+    }
 
-    fun clear() = _trips.clear()
+    fun deleteExpense(tripId: String, expenseId: String) {
+        _trips.update { current ->
+            current.map { trip ->
+                if (trip.id == tripId) {
+                    trip.copy(expenses = trip.expenses.filterNot { it.id == expenseId })
+                } else {
+                    trip
+                }
+            }
+        }
+    }
+
+    fun updateExpense(tripId: String, updatedExpense: Expense) {
+        _trips.update { current ->
+            current.map { trip ->
+                if (trip.id == tripId) {
+                    val updatedList = trip.expenses.map {
+                        if (it.id == updatedExpense.id) updatedExpense else it
+                    }
+                    trip.copy(expenses = updatedList)
+                } else {
+                    trip
+                }
+            }
+        }
+    }
+
+    fun deleteTrip(id: String) {
+        _trips.update { current ->
+            current.filterNot { it.id == id }
+        }
+    }
+
+    fun getById(id: String): SavedTrip? = _trips.value.find { it.id == id }
+
+    fun clear() = _trips.update { emptyList() }
+
+    fun getDefaultMembers(travelers: String?): List<String> {
+        val count = travelers?.filter { it.isDigit() }?.toIntOrNull() ?: 5
+        val list = mutableListOf("Me")
+        if (count > 1) {
+            list.addAll((1 until count).map { "member $it" })
+        }
+        return list
+    }
 }

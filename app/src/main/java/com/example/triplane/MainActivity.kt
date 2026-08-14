@@ -2,6 +2,7 @@ package com.example.triplane
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
@@ -42,6 +43,8 @@ import com.triplane.core.designsystem.theme.TripLaneTheme
 import com.triplane.feature.home.BottomNavPill
 import com.triplane.feature.home.HomeScreen
 import com.triplane.feature.home.PlannerScreen
+import com.triplane.feature.home.HomeViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.triplane.feature.trip.TripExpandOverlay
 import com.triplane.feature.trip.TripWorkspaceScreen
 
@@ -51,6 +54,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             TripLaneTheme {
+                val homeViewModel: HomeViewModel = viewModel()
                 var currentScreen by remember { mutableStateOf("home") }
                 var previousScreen by remember { mutableStateOf("home") }
                 var cardBounds by remember { mutableStateOf(Rect.Zero) }
@@ -66,6 +70,11 @@ class MainActivity : ComponentActivity() {
                 val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
                 val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
 
+                // Intercept back button during expanding animation
+                BackHandler(enabled = currentScreen == "expanding") {
+                    currentScreen = "home"
+                }
+
                 Box(modifier = Modifier.fillMaxSize()) {
                     // Planner Screen: Kept in cache for smoothness (not disposed)
                     Box(
@@ -76,7 +85,11 @@ class MainActivity : ComponentActivity() {
                                 alpha = if (currentScreen == "planner") 1f else 0f
                             }
                     ) {
-                        PlannerScreen()
+                        PlannerScreen(
+                            isActive = currentScreen == "planner",
+                            onBack = { currentScreen = "home" },
+                            viewModel = homeViewModel
+                        )
                     }
 
                     // Bottom layer: TripWorkspaceScreen
@@ -124,7 +137,9 @@ class MainActivity : ComponentActivity() {
                                 cardBounds = bounds
                                 selectedTripId = tripId
                                 currentScreen = "expanding"
-                            }
+                                homeViewModel.setSearchFormExpanded(false)
+                            },
+                            viewModel = homeViewModel
                         )
                     }
 
@@ -142,6 +157,7 @@ class MainActivity : ComponentActivity() {
                             onTabClick = { screen -> 
                                 if (currentScreen != screen) {
                                     currentScreen = screen
+                                    homeViewModel.setSearchFormExpanded(false)
                                 }
                             },
                             modifier = Modifier

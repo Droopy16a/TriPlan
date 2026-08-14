@@ -140,9 +140,9 @@ fun HomeScreen(
     var isScrollingDown by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val expansionAnimatable = remember { Animatable(0f) }
-    var isSearchFormExpanded by remember { mutableStateOf(false) }
-    var destinationInput by remember { mutableStateOf("") }
-    var departureInput by remember { mutableStateOf("") }
+    val isSearchFormExpanded by viewModel.isSearchFormExpanded.collectAsState()
+    val destinationInput by viewModel.destinationQuery.collectAsState()
+    val departureInput by viewModel.departureQuery.collectAsState()
     val scope = rememberCoroutineScope()
     val generationState by viewModel.generationState.collectAsState()
     val savedTrips by viewModel.savedTrips.collectAsState()
@@ -153,9 +153,16 @@ fun HomeScreen(
     // Auto-collapse form and reset state when generation succeeds
     LaunchedEffect(generationState) {
         if (generationState is TripGenerationState.Success) {
-            isSearchFormExpanded = false
-            expansionAnimatable.animateTo(0f, tween(300))
+            viewModel.setSearchFormExpanded(false)
             viewModel.resetState()
+        }
+    }
+    
+    LaunchedEffect(isSearchFormExpanded) {
+        if (isSearchFormExpanded) {
+            expansionAnimatable.animateTo(1f, tween(300))
+        } else {
+            expansionAnimatable.animateTo(0f, tween(300))
         }
     }
 
@@ -188,7 +195,7 @@ fun HomeScreen(
             override suspend fun onPreFling(available: Velocity): Velocity {
                 if (expansionAnimatable.value >= 0.95f) {
                     // Trigger form expansion
-                    isSearchFormExpanded = true
+                    viewModel.setSearchFormExpanded(true)
                 } else if (expansionAnimatable.value > 0f && !isSearchFormExpanded) {
                     expansionAnimatable.animateTo(0f, tween(300))
                 }
@@ -243,7 +250,7 @@ fun HomeScreen(
             )
         ) {
             item {
-                val pageCount = 1 + savedTrips.size
+                val pageCount = savedTrips.size
                 val pagerState = rememberPagerState(pageCount = { pageCount })
                 val context = LocalContext.current
                 var hasVibratedOnStart by remember { mutableStateOf(false) }
@@ -286,8 +293,8 @@ fun HomeScreen(
 
                         var cardBounds by remember { mutableStateOf(Rect.Zero) }
                         
-                        // page 0 = static Kyoto card, pages 1+ = AI-saved trips
-                        val savedTrip = if (page > 0) savedTrips.getOrNull(page - 1) else null
+                        // Pages 0+ = All trips in repository (includes default Kyoto)
+                        val savedTrip = savedTrips.getOrNull(page)
                         
                         HeroTripCard(
                             savedTrip = savedTrip,
@@ -358,8 +365,7 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {
-                        isSearchFormExpanded = false
-                        scope.launch { expansionAnimatable.animateTo(0f, tween(300)) }
+                        viewModel.setSearchFormExpanded(false)
                     }
             )
         }
@@ -369,40 +375,44 @@ fun HomeScreen(
             expansion = if (isSearchFormExpanded) 1f else expansionAnimatable.value,
             isFormExpanded = isSearchFormExpanded,
             onExpand = {
-                isSearchFormExpanded = true
+                viewModel.setSearchFormExpanded(true)
             },
             onClose = {
-                isSearchFormExpanded = false
+                viewModel.setSearchFormExpanded(false)
                 viewModel.updateDepartureSuggestions("")
                 viewModel.updateDestinationSuggestions("")
-                scope.launch { expansionAnimatable.animateTo(0f, tween(300)) }
             },
             onPlanTrip = { departure, dest, start, end, trav, budget, pref ->
                 viewModel.generateTrip(departure, dest, start, end, trav, budget, pref)
             },
             departure = departureInput,
             onDepartureChange = {
-                departureInput = it
-                viewModel.updateDepartureSuggestions(it)
+                viewModel.updateDepartureQuery(it)
             },
             departureSuggestions = departureSuggestions,
             destination = destinationInput,
             onDestinationChange = { 
-                destinationInput = it
-                viewModel.updateDestinationSuggestions(it) 
+                viewModel.updateDestinationQuery(it) 
             },
             onSuggestionClick = { field, suggestion ->
                 if (field == SearchField.Departure) {
-                    departureInput = suggestion.displayName
-                    viewModel.updateDepartureSuggestions("")
+                    viewModel.updateDepartureQuery(suggestion.displayName)
                 } else {
-                    destinationInput = suggestion.displayName
-                    viewModel.updateDestinationSuggestions("")
+                    viewModel.updateDestinationQuery(suggestion.displayName)
                 }
             },
             onClearDepartureSuggestions = { viewModel.updateDepartureSuggestions("") },
             onClearDestinationSuggestions = { viewModel.updateDestinationSuggestions("") },
             destinationSuggestions = destinationSuggestions,
+            startDate = viewModel.startDate.collectAsState().value,
+            endDate = viewModel.endDate.collectAsState().value,
+            onDateRangeChange = { start, end -> viewModel.updateDateRange(start, end) },
+            travelers = viewModel.travelers.collectAsState().value,
+            onTravelersChange = { viewModel.updateTravelers(it) },
+            budget = viewModel.budget.collectAsState().value,
+            onBudgetChange = { viewModel.updateBudget(it) },
+            preferences = viewModel.preferences.collectAsState().value,
+            onPreferencesChange = { viewModel.updatePreferences(it) },
             isLoading = isLoading,
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -468,7 +478,16 @@ fun SearchBar(
     onDestinationChange: (String) -> Unit = {},
     onSuggestionClick: (SearchField, Properties) -> Unit = { _, _ -> },
     onClearDepartureSuggestions: () -> Unit = {},
-    onClearDestinationSuggestions: () -> Unit = {}
+    onClearDestinationSuggestions: () -> Unit = {},
+    startDate: LocalDate? = null,
+    endDate: LocalDate? = null,
+    onDateRangeChange: (LocalDate?, LocalDate?) -> Unit = { _, _ -> },
+    travelers: String = "",
+    onTravelersChange: (String) -> Unit = {},
+    budget: String = "",
+    onBudgetChange: (String) -> Unit = {},
+    preferences: String = "",
+    onPreferencesChange: (String) -> Unit = {}
 ) {
     val extraHeight = (expansion * 24).dp
     val horizontalPadding = (16 + 16 * (1f - expansion)).dp  // 32dp collapsed → 16dp expanded
@@ -510,12 +529,6 @@ fun SearchBar(
             ) { isExpanded ->
                 if (isExpanded) {
                     // Form-level state
-                    var startDate  by remember { mutableStateOf<LocalDate?>(null) }
-                    var endDate    by remember { mutableStateOf<LocalDate?>(null) }
-                    var travelers  by remember { mutableStateOf("") }
-                    var budget     by remember { mutableStateOf("") }
-                    var preferences by remember { mutableStateOf("") }
-
                     var showDatePicker by remember { mutableStateOf(false) }
 
                     var focusedField by remember { mutableStateOf(SearchField.None) }
@@ -621,8 +634,9 @@ fun SearchBar(
                                         val start = dateRangePickerState.selectedStartDateMillis
                                         val end = dateRangePickerState.selectedEndDateMillis
                                         if (start != null && end != null) {
-                                            startDate = Instant.ofEpochMilli(start).atZone(ZoneId.systemDefault()).toLocalDate()
-                                            endDate = Instant.ofEpochMilli(end).atZone(ZoneId.systemDefault()).toLocalDate()
+                                            val s = Instant.ofEpochMilli(start).atZone(ZoneId.systemDefault()).toLocalDate()
+                                            val e = Instant.ofEpochMilli(end).atZone(ZoneId.systemDefault()).toLocalDate()
+                                            onDateRangeChange(s, e)
                                         }
                                         showDatePicker = false
                                     },
@@ -871,7 +885,7 @@ fun SearchBar(
                             )
                             OutlinedTextField(
                                 value = travelers,
-                                onValueChange = { travelers = it },
+                                onValueChange = { onTravelersChange(it) },
                                 label = { Text("Travelers") },
                                 placeholder = { Text("2") },
                                 leadingIcon = { Icon(Icons.Default.Group, contentDescription = null) },
@@ -888,7 +902,7 @@ fun SearchBar(
                             // Budget
                             OutlinedTextField(
                                 value = budget,
-                                onValueChange = { budget = it },
+                                onValueChange = { onBudgetChange(it) },
                                 label = { Text("Budget") },
                                 placeholder = { Text("e.g. \$2000") },
                                 leadingIcon = { Icon(Icons.Default.AttachMoney, contentDescription = null) },
@@ -905,7 +919,7 @@ fun SearchBar(
                             // Preferences
                             OutlinedTextField(
                                 value = preferences,
-                                onValueChange = { preferences = it },
+                                onValueChange = { onPreferencesChange(it) },
                                 label = { Text("Preferences") },
                                 placeholder = { Text("e.g. Vegetarian, Museums, Hiking…") },
                                 modifier = Modifier
@@ -1101,9 +1115,15 @@ fun HeroTripCard(
     val totalBudget = parseCurrency(savedTrip?.budget).let {
         if (it == 0.0) 2500.0 else it // Fallback for static card
     }
-    val spentBudget = savedTrip?.itinerary?.days?.flatMap { it.steps }?.sumOf {
-        it.estimatedCost ?: 0.0
-    } ?: 1200.0 // Fallback for static card
+    val spentBudget = remember(savedTrip) {
+        val itineraryCost = savedTrip?.itinerary?.days?.flatMap { it.steps }?.sumOf {
+            it.estimatedCost ?: 0.0
+        } ?: 0.0
+        val manualExpenses = savedTrip?.expenses?.sumOf { it.amount } ?: 0.0
+
+        val total = itineraryCost + manualExpenses
+        if (total == 0.0 && savedTrip == null) 1200.0 else total
+    }
 
     val remainingBudget = (totalBudget - spentBudget).coerceAtLeast(0.0)
     val targetProgress = if (totalBudget > 0) (spentBudget / totalBudget).toFloat().coerceIn(0f, 1f) else 0f
@@ -1117,195 +1137,216 @@ fun HeroTripCard(
 
     // Display values — fall back to static Kyoto when no saved trip
     val displayEmoji  = savedTrip?.emoji ?: "⛩️"
-    val displayTitle  = savedTrip?.destination ?: "Kyoto, Japan"
+    val cityName = (savedTrip?.destination ?: "Kyoto, Japan").substringBefore(",").trim()
+    val displayTitle = if (savedTrip?.title?.isNotBlank() == true) savedTrip.title else {
+        val year = savedTrip?.itinerary?.days?.firstOrNull()?.date?.substringBefore("-") ?: "2026"
+        "$cityName $year"
+    }
     val displayDates  = savedTrip?.dates ?: "Oct 12 - Oct 24"
     val isAiGenerated = savedTrip != null
+
+    val daysLeft = remember(savedTrip) {
+        val startDate = savedTrip?.itinerary?.days?.firstOrNull()?.date?.let {
+            try { LocalDate.parse(it) } catch (e: Exception) { null }
+        } ?: LocalDate.of(2026, 10, 12)
+        java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), startDate)
+    }
+
+    val daysLeftText = when {
+        daysLeft > 1 -> "$daysLeft Days Left"
+        daysLeft == 1L -> "1 Day Left"
+        daysLeft == 0L -> "Starts Today"
+        else -> null // Trip in progress or past
+    }
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(420.dp)
+            .height(440.dp)
             .border(
                 width = 1.dp,
-                color = Color.Black.copy(alpha = 0.08f),
-                shape = RoundedCornerShape(20.dp)
+                color = Color.Black.copy(alpha = 0.06f),
+                shape = RoundedCornerShape(28.dp)
             ),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(28.dp),
         color = Color.White,
+        shadowElevation = 0.dp,
         onClick = {
             vibrateDevice(context, 30)
             clickWithDelay(scope, onClick = onClick)
         }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Live mini-map area (non-interactive)
+            // Header Map Area
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    .padding(16.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White)
+                    .height(210.dp)
+                    .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                    .background(Color(0xFFF0F0F0))
             ) {
                 var isMapVisible by remember { mutableStateOf(false) }
 
-                AndroidView(
-                    factory = { ctx ->
-                        MapLibre.getInstance(ctx)
-                        val options = MapLibreMapOptions.createFromAttributes(ctx, null)
-                            .textureMode(true)
+                key(savedTrip?.id) {
+                    AndroidView(
+                        factory = { ctx ->
+                            MapLibre.getInstance(ctx)
+                            val options = MapLibreMapOptions.createFromAttributes(ctx, null)
+                                .textureMode(true)
 
-                        MapView(ctx, options).apply {
-                            getMapAsync { map ->
-                                map.uiSettings.isCompassEnabled = false
-                                map.uiSettings.isLogoEnabled = false
-                                map.uiSettings.isAttributionEnabled = false
-                                map.setStyle("https://tiles.openfreemap.org/styles/liberty") { style ->
-                                    val itinerary = savedTrip?.itinerary
-                                    val validSteps = itinerary?.days?.flatMap { it.steps }
-                                        ?.filter { it.lat != null && it.lon != null }
-                                        ?: emptyList()
+                            MapView(ctx, options).apply {
+                                getMapAsync { map ->
+                                    map.setMaxZoomPreference(16.0)
+                                    map.uiSettings.isCompassEnabled = false
+                                    map.uiSettings.isLogoEnabled = false
+                                    map.uiSettings.isAttributionEnabled = false
+                                    map.setStyle("https://tiles.openfreemap.org/styles/liberty") { style ->
+                                        val itinerary = savedTrip?.itinerary
+                                        val validSteps = itinerary?.days?.flatMap { it.steps }
+                                            ?.filter { it.lat != null && it.lon != null }
+                                            ?: emptyList()
 
-                                    val routePoints = if (validSteps.isNotEmpty()) {
-                                        validSteps.map { LatLng(it.lat!!, it.lon!!) to it.title }
-                                    } else {
-                                        listOf(
-                                            LatLng(49.0097, 2.5479) to "Paris CDG",
-                                            LatLng(34.4320, 135.2304) to "Osaka KIX",
-                                            LatLng(35.0116, 135.7681) to "Kyoto"
-                                        )
-                                    }
+                                        val routePoints = if (validSteps.isNotEmpty()) {
+                                            validSteps.map { LatLng(it.lat!!, it.lon!!) to it.title }
+                                        } else {
+                                            listOf(
+                                                LatLng(49.0097, 2.5479) to "Paris CDG",
+                                                LatLng(34.4320, 135.2304) to "Osaka KIX",
+                                                LatLng(35.0116, 135.7681) to "Kyoto"
+                                            )
+                                        }
 
-                                    // Routes
-                                    if (routePoints.size > 1) {
-                                        val features = mutableListOf<Feature>()
-                                        for (i in 0 until routePoints.size - 1) {
-                                            val start = routePoints[i].first
-                                            val end = routePoints[i + 1].first
-                                            val line = LineString.fromLngLats(listOf(
-                                                Point.fromLngLat(start.longitude, start.latitude),
-                                                Point.fromLngLat(end.longitude, end.latitude)
+                                        // Routes - solid black line as seen in image
+                                        if (routePoints.size > 1) {
+                                            val lineString = LineString.fromLngLats(routePoints.map { Point.fromLngLat(it.first.longitude, it.first.latitude) })
+                                            
+                                            style.addSource(GeoJsonSource("routes-source", Feature.fromGeometry(lineString)))
+                                            style.addLayer(LineLayer("routes-layer", "routes-source").withProperties(
+                                                PropertyFactory.lineColor("#000000"),
+                                                PropertyFactory.lineWidth(3f),
+                                                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                                                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
                                             ))
-                                            features.add(Feature.fromGeometry(line))
                                         }
-                                        
-                                        style.addSource(GeoJsonSource("routes-source", FeatureCollection.fromFeatures(features.toTypedArray())))
-                                        
-                                        style.addLayer(LineLayer("routes-layer", "routes-source").withProperties(
-                                            PropertyFactory.lineColor("#2B2D42"),
-                                            PropertyFactory.lineWidth(2f),
-                                            PropertyFactory.lineDasharray(arrayOf(2f, 2f)),
-                                            PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
-                                            PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
-                                        ))
-                                    }
 
-                                    // Markers - showing first and last for mini map to keep it clean, or all if few
-                                    val markersToShow = if (routePoints.size <= 3) routePoints else listOf(routePoints.first(), routePoints.last())
-                                    
-                                    markersToShow.forEachIndexed { index, (pos, label) ->
-                                        val markerBitmap = createMiniMapMarkerBitmap(ctx, label)
-                                        val markerId = "marker-$index"
-                                        style.addImage(markerId, markerBitmap)
+                                        // Markers - showing first and last for mini map to keep it clean, or all if few
+                                        val markersToShow = if (routePoints.size <= 3) routePoints else listOf(routePoints.first(), routePoints.last())
 
-                                        val sourceId = "marker-source-$index"
-                                        style.addSource(GeoJsonSource(sourceId, Feature.fromGeometry(
-                                            Point.fromLngLat(pos.longitude, pos.latitude)
-                                        )))
+                                        markersToShow.forEachIndexed { index, (pos, label) ->
+                                            val markerBitmap = createMiniMapMarkerBitmap(ctx, label)
+                                            val markerId = "marker-$index"
+                                            style.addImage(markerId, markerBitmap)
 
-                                        style.addLayer(SymbolLayer("marker-layer-$index", sourceId).withProperties(
-                                            PropertyFactory.iconImage(markerId),
-                                            PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
-                                            PropertyFactory.iconOffset(arrayOf(0f, 4f)),
-                                            PropertyFactory.iconAllowOverlap(true)
-                                        ))
-                                    }
+                                            val sourceId = "marker-source-$index"
+                                            style.addSource(GeoJsonSource(sourceId, Feature.fromGeometry(
+                                                Point.fromLngLat(pos.longitude, pos.latitude)
+                                            )))
 
-                                    if (routePoints.isNotEmpty()) {
-                                        val routeBounds = LatLngBounds.Builder().apply {
-                                            routePoints.forEach { include(it.first) }
-                                        }.build()
-                                        
-                                        try {
-                                            if (routePoints.size > 1) {
-                                                map.moveCamera(CameraUpdateFactory.newLatLngBounds(routeBounds, 60))
-                                            } else {
-                                                map.moveCamera(CameraUpdateFactory.newLatLngZoom(routePoints.first().first, 10.0))
+                                            style.addLayer(SymbolLayer("marker-layer-$index", sourceId).withProperties(
+                                                PropertyFactory.iconImage(markerId),
+                                                PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                                                PropertyFactory.iconOffset(arrayOf(0f, 4f)),
+                                                PropertyFactory.iconAllowOverlap(true)
+                                            ))
+                                        }
+
+                                        if (routePoints.isNotEmpty()) {
+                                            val routeBounds = LatLngBounds.Builder().apply {
+                                                routePoints.forEach { include(it.first) }
+                                            }.build()
+
+                                            try {
+                                                if (routePoints.size > 1) {
+                                                    map.moveCamera(CameraUpdateFactory.newLatLngBounds(routeBounds, 60))
+                                                } else {
+                                                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(routePoints.first().first, 14.0))
+                                                }
+                                            } catch (e: Exception) {
+                                                map.moveCamera(CameraUpdateFactory.newLatLngZoom(routePoints.first().first, 14.0))
                                             }
-                                        } catch (e: Exception) {
-                                            map.moveCamera(CameraUpdateFactory.newLatLngZoom(routePoints.first().first, 10.0))
                                         }
+                                        isMapVisible = true
                                     }
-
-                                    isMapVisible = true
                                 }
                             }
-                        }
-                    },
-                    update = { _ -> },
-                    onRelease = { view -> view.onDestroy() },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            // Parallax effect on map
-                            translationX = -pageOffset * 150f
-                        }
-                )
+                        },
+                        update = { _ -> },
+                        onRelease = { view -> view.onDestroy() },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                translationX = -pageOffset * 100f
+                            }
+                    )
+                }
 
                 if (!isMapVisible) {
                     Box(modifier = Modifier.fillMaxSize().background(Color.White))
                 }
 
+                // Transparent overlay for click
+                Box(modifier = Modifier.fillMaxSize().clickable {
+                    vibrateDevice(context, 30)
+                    clickWithDelay(scope, onClick = onClick)
+                })
 
-                // Transparent overlay so tapping anywhere on the map fires the card click
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable {
-                            vibrateDevice(context, 30)
-                            clickWithDelay(scope, onClick = onClick)
-                        }
-                )
+                // Top-right badge
+                if (daysLeftText != null) {
+                    Surface(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .align(Alignment.TopEnd),
+                        color = Color.White,
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text(
+                            daysLeftText,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
 
-            // Info area
+            // Bottom Content Area
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .padding(24.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Icon Box
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(54.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .background(DeepGraphite),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(displayEmoji, style = MaterialTheme.typography.headlineSmall)
+                        Text(displayEmoji, style = MaterialTheme.typography.titleLarge)
                     }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(displayTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(displayDates, style = MaterialTheme.typography.bodyMedium)
-                            if (!isAiGenerated) {
-                                Spacer(modifier = Modifier.width(13.dp))
-                                Surface(color = BrandLightGreen, shape = RoundedCornerShape(50)) {
-                                    Text(
-                                        "D-14",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = BrandDarkGreen,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
+                    
+                    Spacer(modifier = Modifier.width(20.dp))
+                    
+                    Column {
+                        Text(
+                            displayTitle, 
+                            style = MaterialTheme.typography.titleLarge, 
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp
+                        )
+                        Text(
+                            displayDates, 
+                            style = MaterialTheme.typography.bodyLarge, 
+                            color = Color.Gray
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
                         if (isAiGenerated) {
                             Text(
-                                "✦ ${savedTrip!!.travelers} travelers · ${savedTrip.budget}",
-                                style = MaterialTheme.typography.bodySmall,
+                                "✦ ${savedTrip.travelers} travelers · ${savedTrip.budget}",
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = Color.Gray
                             )
                         } else {
@@ -1314,26 +1355,47 @@ fun HeroTripCard(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(32.dp))
 
-                // Budget Bar
+                // Budget Section
                 val remainingFormatted = String.format(Locale.US, "%,.0f", remainingBudget).replace(",", " ")
-                Text("$ $remainingFormatted remaining", style = MaterialTheme.typography.labelMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Box(
+                Text(
+                    "$ $remainingFormatted remaining", 
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                // Progress Bar with Dot
+                BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(50))
+                        .height(10.dp)
+                        .clip(CircleShape)
                         .background(UIBorderGray)
                 ) {
+                    val progressWidth = maxWidth * budgetProgress
+                    
+                    // Progress Fill
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(budgetProgress)
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(topStartPercent = 50, bottomStartPercent = 50))
-                            .background(MintGreen)
+                            .width(progressWidth)
+                            .fillMaxHeight()
+                            .background(BrandLightGreen)
                     )
+                    
+                    // White Dot
+                    if (budgetProgress > 0) {
+                        Box(
+                            modifier = Modifier
+                                .offset(x = progressWidth - 5.dp)
+                                .align(Alignment.CenterStart)
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(Color.White)
+                        )
+                    }
                 }
             }
         }

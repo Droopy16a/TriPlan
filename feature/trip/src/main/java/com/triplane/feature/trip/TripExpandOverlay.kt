@@ -91,6 +91,7 @@ fun TripExpandOverlay(
                     
                     MapView(context, options).apply {
                         getMapAsync { map ->
+                            map.setMaxZoomPreference(16.0)
                             map.setStyle("https://tiles.openfreemap.org/styles/liberty") { style ->
                                 val validSteps = currentTrip?.itinerary?.days?.flatMap { it.steps }
                                     ?.filter { it.lat != null && it.lon != null }
@@ -116,10 +117,10 @@ fun TripExpandOverlay(
                                         if (routePoints.size > 1) {
                                             map.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100))
                                         } else {
-                                            map.moveCamera(CameraUpdateFactory.newLatLngZoom(routePoints.first().first, 10.0))
+                                            map.moveCamera(CameraUpdateFactory.newLatLngZoom(routePoints.first().first, 16.0))
                                         }
                                     } catch (e: Exception) {
-                                        map.moveCamera(CameraUpdateFactory.newLatLngZoom(routePoints.first().first, 10.0))
+                                        map.moveCamera(CameraUpdateFactory.newLatLngZoom(routePoints.first().first, 16.0))
                                     }
                                 }
 

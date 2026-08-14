@@ -48,15 +48,35 @@ object TripItineraryValidator {
             }
         }
 
-        // 4. Activity density
+        // 4. Activity density & Variety
         chunk.days.forEach { day ->
-            val stepCount = day.steps.size
+            val steps = day.steps
+            val stepCount = steps.size
+            
             if (stepCount < 1) {
                 errors.add("Day ${day.dayNumber} has no steps")
             }
-            // User requested 4-6 steps for normal/full days. 
-            // Orchestrator will have to decide what's "normal", 
-            // but validator can flag very low or very high counts.
+            
+            val activities = steps.filter { it.category.equals("Activity", ignoreCase = true) }
+            
+            // A full day should have at least one activity. 
+            // We'll be slightly lenient for the very first/last day if they are short.
+            // But if it's not day 1 or the last day, it must have activities.
+            if (activities.isEmpty() && stepCount >= 3) {
+                errors.add("Day ${day.dayNumber} has no activities scheduled")
+            }
+
+            // Check if it's just hotel stay
+            val hotelTitles = steps.filter { it.category.equals("Accommodation", ignoreCase = true) }.map { it.title }.toSet()
+            val nonHotelSteps = steps.filter { 
+                !it.category.equals("Accommodation", ignoreCase = true) && 
+                !hotelTitles.contains(it.title) 
+            }
+            
+            if (nonHotelSteps.isEmpty() && stepCount > 1) {
+                errors.add("Day ${day.dayNumber} only contains hotel-related steps")
+            }
+
             if (stepCount > 10) {
                 errors.add("Day ${day.dayNumber} is overloaded with $stepCount steps")
             }

@@ -100,7 +100,8 @@ class AiPlannerService(private val context: Context) {
         accommodationCandidates: List<POI>,
         weatherForecast: String,
         alreadyUsedPois: List<String>,
-        remainingBudget: String
+        remainingBudget: String,
+        previousError: String? = null
     ): Result<TripItinerary> {
         return try {
             val isOnline = isNetworkAvailable()
@@ -120,6 +121,8 @@ class AiPlannerService(private val context: Context) {
 
                 ALREADY USED PLACES (Do not repeat these unless necessary):
                 ${alreadyUsedPois.joinToString(", ")}
+                
+                ${if (previousError != null) "PREVIOUS ATTEMPT ERROR: $previousError. Please correct this in your new response." else ""}
             """.trimIndent()
 
             val prompt = buildChunkPrompt(
@@ -223,6 +226,10 @@ class AiPlannerService(private val context: Context) {
             10. Do not invent hotels, prices, or availability. If accommodation price is not in the data, set estimatedCost to null. If no accommodation is available, state that in the summary.
             11. Take the departure location ($departure) into account for the first and last day (e.g., travel times, airports, train stations).
             12. Ensure the schedule is realistic with travel times.
+            13. Variety is mandatory: Minimize 'FreeTime' at the hotel. Encourage exploring 'CANDIDATE PLACES' for activities to provide a rich local experience. Avoid having all meals at the accommodation.
+            14. Separation of concerns: The accommodation should ONLY be used for 'Accommodation' (sleeping, check-in) and 'Food' steps. NEVER schedule an 'Activity' at the accommodation; all activities MUST be chosen from 'CANDIDATE PLACES'.
+            15. No Hotel-Only Days: A day must NOT consist only of steps at the accommodation. Every full day MUST include at least one 'Activity' step that takes place at a 'CANDIDATE PLACE' (not at the hotel). If a day has no activities outside the hotel, the itinerary will be considered invalid.
+            16. Exploration: Even if the user has preferences for relaxation, still include at least one local point of interest from 'CANDIDATE PLACES' per day to ensure they see the destination.
             
             Return the result ONLY as a valid JSON object matching this schema exactly:
             {

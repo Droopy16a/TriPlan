@@ -9,10 +9,13 @@ import com.triplane.core.ai.SavedTrip
 import com.triplane.core.ai.TripRepository
 import com.triplane.core.location.LocationService
 import com.triplane.core.location.Properties
+import com.triplane.feature.home.util.PlanningNotificationHelper
+import com.triplane.feature.home.util.PlanningSignal
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -24,12 +27,14 @@ sealed class TripGenerationState {
     data class Loading(val message: String = "Planning your trip…") : TripGenerationState()
     data class Success(val trip: SavedTrip) : TripGenerationState()
     data class Error(val message: String) : TripGenerationState()
+    object Cancelled : TripGenerationState()
 }
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val aiService = AiPlannerService(application)
     private val locationService = LocationService()
+    private val notificationHelper = PlanningNotificationHelper(application)
 
     private val _generationState = MutableStateFlow<TripGenerationState>(TripGenerationState.Idle)
     val generationState: StateFlow<TripGenerationState> = _generationState
@@ -40,21 +45,85 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _departureSuggestions = MutableStateFlow<List<Properties>>(emptyList())
     val departureSuggestions: StateFlow<List<Properties>> = _departureSuggestions
 
+    private val _destinationQuery = MutableStateFlow("")
+    val destinationQuery: StateFlow<String> = _destinationQuery
+
+    private val _departureQuery = MutableStateFlow("")
+    val departureQuery: StateFlow<String> = _departureQuery
+
+    private val _startDate = MutableStateFlow<LocalDate?>(null)
+    val startDate: StateFlow<LocalDate?> = _startDate
+
+    private val _endDate = MutableStateFlow<LocalDate?>(null)
+    val endDate: StateFlow<LocalDate?> = _endDate
+
+    private val _travelers = MutableStateFlow("")
+    val travelers: StateFlow<String> = _travelers
+
+    private val _budget = MutableStateFlow("")
+    val budget: StateFlow<String> = _budget
+
+    private val _preferences = MutableStateFlow("")
+    val preferences: StateFlow<String> = _preferences
+
+    private val _isSearchFormExpanded = MutableStateFlow(false)
+    val isSearchFormExpanded: StateFlow<Boolean> = _isSearchFormExpanded
+
     private var suggestionJob: Job? = null
+    private var generationJob: Job? = null
 
     // Expose the list of saved trips (refreshes when a new one is saved)
-    private val _savedTrips = MutableStateFlow<List<SavedTrip>>(TripRepository.trips)
-    val savedTrips: StateFlow<List<SavedTrip>> = _savedTrips
+    val savedTrips: StateFlow<List<SavedTrip>> = TripRepository.trips
 
     private val _selectedCityProperties = MutableStateFlow<Properties?>(null)
     val selectedCityProperties: StateFlow<Properties?> = _selectedCityProperties
 
+    init {
+        viewModelScope.launch {
+            PlanningSignal.cancelSignal.collectLatest {
+                cancelGeneration()
+            }
+        }
+    }
+
     fun selectCity(properties: Properties) {
         _selectedCityProperties.value = properties
+        _destinationQuery.value = properties.displayName
     }
 
     fun clearSelection() {
         _selectedCityProperties.value = null
+    }
+
+    fun updateDestinationQuery(query: String) {
+        _destinationQuery.value = query
+        updateDestinationSuggestions(query)
+    }
+
+    fun updateDepartureQuery(query: String) {
+        _departureQuery.value = query
+        updateDepartureSuggestions(query)
+    }
+
+    fun updateDateRange(start: LocalDate?, end: LocalDate?) {
+        _startDate.value = start
+        _endDate.value = end
+    }
+
+    fun updateTravelers(value: String) {
+        _travelers.value = value
+    }
+
+    fun updateBudget(value: String) {
+        _budget.value = value
+    }
+
+    fun updatePreferences(value: String) {
+        _preferences.value = value
+    }
+
+    fun setSearchFormExpanded(expanded: Boolean) {
+        _isSearchFormExpanded.value = expanded
     }
 
     private fun emojiForDestination(destination: String): String {
@@ -81,8 +150,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         budget: String,
         preferences: String
     ) {
-        viewModelScope.launch {
+        generationJob?.cancel()
+        generationJob = viewModelScope.launch {
             _generationState.value = TripGenerationState.Loading("Planning your trip…")
+            notificationHelper.showNotification("Planning your trip…")
 
             // Start loading sequence
             val loadingJob = launch {
@@ -108,6 +179,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         LoadingMessages.getRandom(LoadingMessages.playful)
                     }
                     _generationState.value = TripGenerationState.Loading(msg)
+                    notificationHelper.showNotification(msg)
                     delay(2800)
                     if (index < sequence.size) index++
                 }
@@ -115,6 +187,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
             val result = aiService.generateTrip(departure, destination, startDate, endDate, travelers, budget, preferences)
             loadingJob.cancel()
+            notificationHelper.dismissNotification()
 
             if (result.isSuccess) {
                 val itinerary = result.getOrThrow()
@@ -128,24 +201,35 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     "flexible"
                 }
 
+                val cityName = destination.substringBefore(",").trim()
+                val year = startDate?.year ?: LocalDate.now().year
+                val defaultTitle = "$cityName $year"
+
                 val trip = SavedTrip(
                     id = UUID.randomUUID().toString(),
-                    title = itinerary.title,
+                    title = defaultTitle,
                     destination = itinerary.destination,
                     dates = durationText,
                     travelers = travelers,
                     budget = budget,
+                    preferences = preferences,
                     emoji = emojiForDestination(destination),
                     itinerary = itinerary
                 )
                 TripRepository.save(trip)
-                _savedTrips.value = TripRepository.trips
                 _generationState.value = TripGenerationState.Success(trip)
             } else {
                 val msg = result.exceptionOrNull()?.message ?: "Unknown error"
                 _generationState.value = TripGenerationState.Error(msg)
             }
         }
+    }
+
+    fun cancelGeneration() {
+        generationJob?.cancel()
+        generationJob = null
+        _generationState.value = TripGenerationState.Cancelled
+        notificationHelper.dismissNotification()
     }
 
     fun resetState() {

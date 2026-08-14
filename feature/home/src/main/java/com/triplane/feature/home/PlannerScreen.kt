@@ -46,6 +46,7 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.toArgb
 import com.triplane.core.location.Properties
 import com.triplane.core.ai.AiPlannerService
+import androidx.activity.compose.BackHandler
 
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -54,6 +55,8 @@ import androidx.compose.foundation.clickable
 
 @Composable
 fun PlannerScreen(
+    isActive: Boolean = true,
+    onBack: () -> Unit = {},
     viewModel: HomeViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -61,8 +64,9 @@ fun PlannerScreen(
     var isVisible by remember { mutableStateOf(false) }
     var mapInstance by remember { mutableStateOf<MapLibreMap?>(null) }
     val selectedCity by viewModel.selectedCityProperties.collectAsState()
-    var destinationInput by remember { mutableStateOf("") }
-    var departureInput by remember { mutableStateOf("") }
+    val destinationInput by viewModel.destinationQuery.collectAsState()
+    val departureInput by viewModel.departureQuery.collectAsState()
+    val isSearchFormExpanded by viewModel.isSearchFormExpanded.collectAsState()
     
     // Tap animation state
     var tapPoint by remember { mutableStateOf<Offset?>(null) }
@@ -70,7 +74,6 @@ fun PlannerScreen(
 
     // Search form state
     val expansionAnimatable = remember { Animatable(0f) }
-    var isSearchFormExpanded by remember { mutableStateOf(false) }
     val generationState by viewModel.generationState.collectAsState()
     val destinationSuggestions by viewModel.destinationSuggestions.collectAsState()
     val departureSuggestions by viewModel.departureSuggestions.collectAsState()
@@ -94,8 +97,7 @@ fun PlannerScreen(
     // Auto-collapse form and reset state when generation succeeds
     LaunchedEffect(generationState) {
         if (generationState is TripGenerationState.Success) {
-            isSearchFormExpanded = false
-            expansionAnimatable.animateTo(0f, tween(300))
+            viewModel.setSearchFormExpanded(false)
             viewModel.resetState()
         }
     }
@@ -103,20 +105,20 @@ fun PlannerScreen(
     LaunchedEffect(isSearchFormExpanded) {
         if (isSearchFormExpanded) {
             isMapSpinning = false
+            expansionAnimatable.animateTo(1f, tween(300))
+        } else {
+            expansionAnimatable.animateTo(0f, tween(300))
         }
     }
 
     LaunchedEffect(selectedCity) {
         val city = selectedCity
         if (city != null) {
-            destinationInput = city.displayName
-
             // Wait a brief moment so the tap feedback is seen before the form expands
             delay(125)
 
             if (!isSearchFormExpanded) {
-                isSearchFormExpanded = true
-                scope.launch { expansionAnimatable.animateTo(1f, tween(300)) }
+                viewModel.setSearchFormExpanded(true)
             }
         }
     }
@@ -140,6 +142,14 @@ fun PlannerScreen(
                     }
                 }
             }
+        }
+    }
+
+    BackHandler(enabled = isActive) {
+        if (isSearchFormExpanded) {
+            viewModel.setSearchFormExpanded(false)
+        } else {
+            onBack()
         }
     }
     
@@ -313,8 +323,7 @@ fun PlannerScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {
-                        isSearchFormExpanded = false
-                        scope.launch { expansionAnimatable.animateTo(0f, tween(300)) }
+                        viewModel.setSearchFormExpanded(false)
                     }
             )
         }
@@ -323,45 +332,48 @@ fun PlannerScreen(
             expansion = if (isSearchFormExpanded) 1f else expansionAnimatable.value,
             isFormExpanded = isSearchFormExpanded,
             onExpand = {
-                isSearchFormExpanded = true
-                scope.launch { expansionAnimatable.animateTo(1f, tween(300)) }
+                viewModel.setSearchFormExpanded(true)
             },
             onClose = {
-                isSearchFormExpanded = false
+                viewModel.setSearchFormExpanded(false)
                 viewModel.clearSelection()
                 viewModel.updateDepartureSuggestions("")
                 viewModel.updateDestinationSuggestions("")
-                scope.launch { expansionAnimatable.animateTo(0f, tween(300)) }
             },
             onPlanTrip = { departure, dest, start, end, trav, budget, pref ->
                 viewModel.generateTrip(departure, dest, start, end, trav, budget, pref)
             },
             departure = departureInput,
             onDepartureChange = {
-                departureInput = it
-                viewModel.updateDepartureSuggestions(it)
+                viewModel.updateDepartureQuery(it)
             },
             departureSuggestions = departureSuggestions,
             destination = destinationInput,
             onDestinationChange = { 
-                destinationInput = it
                 if (selectedCity != null && it != selectedCity?.displayName) {
                     viewModel.clearSelection()
                 }
-                viewModel.updateDestinationSuggestions(it) 
+                viewModel.updateDestinationQuery(it) 
             },
             onSuggestionClick = { field, suggestion ->
                 if (field == SearchField.Departure) {
-                    departureInput = suggestion.displayName
-                    viewModel.updateDepartureSuggestions("")
+                    viewModel.updateDepartureQuery(suggestion.displayName)
                 } else {
-                    destinationInput = suggestion.displayName
-                    viewModel.updateDestinationSuggestions("")
+                    viewModel.updateDestinationQuery(suggestion.displayName)
                 }
             },
             onClearDepartureSuggestions = { viewModel.updateDepartureSuggestions("") },
             onClearDestinationSuggestions = { viewModel.updateDestinationSuggestions("") },
             destinationSuggestions = destinationSuggestions,
+            startDate = viewModel.startDate.collectAsState().value,
+            endDate = viewModel.endDate.collectAsState().value,
+            onDateRangeChange = { start, end -> viewModel.updateDateRange(start, end) },
+            travelers = viewModel.travelers.collectAsState().value,
+            onTravelersChange = { viewModel.updateTravelers(it) },
+            budget = viewModel.budget.collectAsState().value,
+            onBudgetChange = { viewModel.updateBudget(it) },
+            preferences = viewModel.preferences.collectAsState().value,
+            onPreferencesChange = { viewModel.updatePreferences(it) },
             isLoading = isLoading,
             modifier = Modifier
                 .align(Alignment.TopCenter)

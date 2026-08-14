@@ -6,23 +6,33 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsTransit
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FlightLand
 import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.WbSunny
@@ -45,6 +55,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -70,6 +82,7 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
@@ -86,8 +99,11 @@ import androidx.core.content.res.ResourcesCompat
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.core.spring
 import androidx.core.net.toUri
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -96,11 +112,20 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import com.triplane.core.ai.Expense
 import com.triplane.core.designsystem.theme.DeepGraphite
 import com.triplane.core.designsystem.theme.UIBackgroundGray
 import com.triplane.core.designsystem.theme.BrandLightGreen
 import com.triplane.core.designsystem.util.clickWithDelay
 import com.triplane.core.designsystem.util.parseCurrency
+import com.triplane.core.ai.SavedTrip
 import com.triplane.core.ai.TripItinerary
 import com.triplane.core.ai.TripRepository
 import com.triplane.core.ai.TripStep
@@ -123,6 +148,14 @@ fun TripWorkspaceScreen(
     var maplibreMapRef by remember { mutableStateOf<MapLibreMap?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val config = LocalConfiguration.current
+    
+    // Set padding to 75% of screen height to force the "center" into the top quarter
+    val bottomPaddingPx = remember(density, config) { 
+        with(density) { (config.screenHeightDp * 0.75f).dp.roundToPx() } 
+    }
+    val boundsPaddingPx = remember(density) { with(density) { 40.dp.roundToPx() } }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -136,8 +169,16 @@ fun TripWorkspaceScreen(
         }
     }
 
-    val currentTrip = tripId?.let { TripRepository.getById(it) }
-    val tripName = currentTrip?.destination ?: "Kyoto, Japan"
+    val allTrips by TripRepository.trips.collectAsState()
+    val currentTrip = remember(tripId, allTrips) { allTrips.find { it.id == tripId } }
+    val tripName = currentTrip?.let { trip ->
+        if (trip.title.isNotBlank()) trip.title
+        else {
+            val city = trip.destination.substringBefore(",").trim()
+            val year = trip.itinerary?.days?.firstOrNull()?.date?.substringBefore("-") ?: "2026"
+            "$city $year"
+        }
+    } ?: "Kyoto 2026"
     val aiItinerary = currentTrip?.itinerary
     val geocodingProvider = remember(context) { AiPlannerService(context).geocodingProvider }
 
@@ -212,12 +253,12 @@ fun TripWorkspaceScreen(
                             val bounds = LatLngBounds.Builder().apply {
                                 currentDaySteps.forEach { include(LatLng(it.lat!!, it.lon!!)) }
                             }.build()
-                            map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 120), 1000)
+                            map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, boundsPaddingPx), 1000)
                         } else {
                             // Single step — just zoom to it directly, no bounds needed
                             val step = currentDaySteps[0]
                             map.animateCamera(
-                                CameraUpdateFactory.newLatLngZoom(LatLng(step.lat!!, step.lon!!), 14.0),
+                                CameraUpdateFactory.newLatLngZoom(LatLng(step.lat!!, step.lon!!), 16.0),
                                 1000
                             )
                         }
@@ -239,6 +280,14 @@ fun TripWorkspaceScreen(
         if (transitionComplete) sheetReady = true
     }
 
+    BackHandler(enabled = transitionComplete) {
+        if (scaffoldState.bottomSheetState.currentValue == SheetValue.Expanded) {
+            scope.launch { scaffoldState.bottomSheetState.partialExpand() }
+        } else {
+            onBackClick()
+        }
+    }
+
     BottomSheetScaffold(
         scaffoldState = scaffoldState,
         sheetPeekHeight = sheetPeekHeight,
@@ -251,12 +300,12 @@ fun TripWorkspaceScreen(
                 tripId = tripId,
                 pagerState = pagerState,
                 geocodingProvider = geocodingProvider,
+                onTripDeleted = onBackClick,
                 onLocationSelected = { point ->
                     scope.launch {
                         scaffoldState.bottomSheetState.partialExpand()
 
                         val map = maplibreMapRef
-                        val visualOffsetPoint = LatLng(point.latitude - 0.001, point.longitude)
 
                         if (map != null) {
                             val currentCenter = map.cameraPosition.target
@@ -273,7 +322,7 @@ fun TripWorkspaceScreen(
                                 map.animateCamera(
                                     CameraUpdateFactory.newCameraPosition(
                                         CameraPosition.Builder()
-                                            .target(visualOffsetPoint)
+                                            .target(point)
                                             .zoom(16.0)
                                             .bearing(0.0)
                                             .tilt(0.0)
@@ -285,7 +334,7 @@ fun TripWorkspaceScreen(
                                 map.animateCamera(
                                     CameraUpdateFactory.newCameraPosition(
                                         CameraPosition.Builder()
-                                            .target(visualOffsetPoint)
+                                            .target(point)
                                             .zoom(16.0)
                                             .bearing(0.0)
                                             .tilt(0.0)
@@ -310,6 +359,7 @@ fun TripWorkspaceScreen(
                     MapView(ctx, options).apply {
                         getMapAsync { map ->
                             maplibreMapRef = map
+                            map.setPadding(0, 0, 0, bottomPaddingPx)
                             map.uiSettings.isCompassEnabled = false
                             map.uiSettings.isLogoEnabled = false
                             map.uiSettings.isAttributionEnabled = false
@@ -409,25 +459,38 @@ fun TripSheetContent(
     tripId: String?,
     pagerState: PagerState,
     geocodingProvider: GeocodingProvider,
+    onTripDeleted: () -> Unit = {},
     onLocationSelected: (LatLng) -> Unit
 ) {
-    // Memoised — TripRepository.getById iterates the list on every call so we must
-    // not call it on every recomposition of the sheet (which happens on drag, tab
-    // changes, pager swipes, etc.).
-    val currentTrip = remember(tripId) { tripId?.let { TripRepository.getById(it) } }
-    val tripName = currentTrip?.destination ?: "Kyoto, Japan"
+    val allTrips by TripRepository.trips.collectAsState()
+    val currentTrip = remember(tripId, allTrips) { allTrips.find { it.id == tripId } }
+    val tripName = currentTrip?.let { trip ->
+        if (trip.title.isNotBlank()) trip.title
+        else {
+            val city = trip.destination.substringBefore(",").trim()
+            val year = trip.itinerary?.days?.firstOrNull()?.date?.substringBefore("-") ?: "2026"
+            "$city $year"
+        }
+    } ?: "Kyoto 2026"
     val aiItinerary = currentTrip?.itinerary
+    val context = LocalContext.current
 
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Itinerary", "Expenses", "Members")
 
-    // Memoised — parseCurrency parses a string on every call and the flatMap/sumOf
-    // traverses every step of every day; neither should run on every recomposition.
-    val totalBudget = remember(tripId) {
+    var prefilledTitle by remember { mutableStateOf<String?>(null) }
+    var prefilledAmount by remember { mutableStateOf<Double?>(null) }
+
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    val totalBudget = remember(currentTrip?.budget) {
         parseCurrency(currentTrip?.budget).let { if (it == 0.0) 1500.0 else it }
     }
-    val spentBudget = remember(aiItinerary) {
-        aiItinerary?.days?.flatMap { it.steps }?.sumOf { it.estimatedCost ?: 0.0 } ?: 0.0
+    val spentBudget = remember(aiItinerary, currentTrip?.expenses) {
+        val itineraryCost = aiItinerary?.days?.flatMap { it.steps }?.sumOf { it.estimatedCost ?: 0.0 } ?: 0.0
+        val manualExpenses = currentTrip?.expenses?.sumOf { it.amount } ?: 0.0
+        itineraryCost + manualExpenses
     }
 
     val stopFlingCollapseConnection = remember {
@@ -456,16 +519,95 @@ fun TripSheetContent(
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(currentTrip?.emoji ?: "⛩️", style = MaterialTheme.typography.headlineSmall)
             }
-            OutlinedButton(
-                onClick = { },
-                shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, UIBackgroundGray),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                modifier = Modifier.height(36.dp)
-            ) {
-                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp), tint = DeepGraphite)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Edit Trip", style = MaterialTheme.typography.labelMedium, color = DeepGraphite)
+            var showMenu by remember { mutableStateOf(false) }
+            Box {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .border(1.dp, DeepGraphite.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showMenu = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Menu,
+                        contentDescription = "Menu",
+                        modifier = Modifier.size(20.dp),
+                        tint = DeepGraphite
+                    )
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                    modifier = Modifier.background(Color.White)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Edit Trip", style = MaterialTheme.typography.bodyMedium) },
+                        onClick = {
+                            showMenu = false
+                            showEditDialog = true
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = DeepGraphite
+                            )
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Share Trip", style = MaterialTheme.typography.bodyMedium) },
+                        onClick = {
+                            showMenu = false
+                            val shareIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, "Check out my trip to ${currentTrip?.destination}! ${currentTrip?.title} (${currentTrip?.dates})")
+                                type = "text/plain"
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, null))
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Share,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = DeepGraphite
+                            )
+                        }
+                    )
+//                    DropdownMenuItem(
+//                        text = { Text("Duplicate Trip", style = MaterialTheme.typography.bodyMedium) },
+//                        onClick = {
+//                            showMenu = false
+//                            // Add duplicate action here
+//                        },
+//                        leadingIcon = {
+//                            Icon(
+//                                Icons.Default.ContentCopy,
+//                                contentDescription = null,
+//                                modifier = Modifier.size(18.dp),
+//                                tint = DeepGraphite
+//                            )
+//                        }
+//                    )
+                    HorizontalDivider(color = UIBackgroundGray)
+                    DropdownMenuItem(
+                        text = { Text("Delete Trip", style = MaterialTheme.typography.bodyMedium, color = Color.Red) },
+                        onClick = {
+                            showMenu = false
+                            showDeleteDialog = true
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = Color.Red
+                            )
+                        }
+                    )
+                }
             }
         }
 
@@ -531,14 +673,303 @@ fun TripSheetContent(
                 itinerary = aiItinerary,
                 pagerState = pagerState,
                 geocodingProvider = geocodingProvider,
-                onLocationSelected = onLocationSelected
+                onLocationSelected = onLocationSelected,
+                onAddToExpenses = { title, amount ->
+                    prefilledTitle = title
+                    prefilledAmount = amount
+                    selectedTabIndex = 1
+                }
             )
-            1 -> com.triplane.feature.expenses.ExpenseScreen(totalBudget = totalBudget, spentBudget = spentBudget)
+            1 -> com.triplane.feature.expenses.ExpenseScreen(
+                totalBudget = totalBudget,
+                spentBudget = spentBudget,
+                expenses = currentTrip?.expenses ?: emptyList(),
+                memberNames = currentTrip?.memberNames?.takeIf { it.isNotEmpty() } 
+                    ?: TripRepository.getDefaultMembers(currentTrip?.travelers),
+                prefilledTitle = prefilledTitle,
+                prefilledAmount = prefilledAmount,
+                onPrefillHandled = {
+                    prefilledTitle = null
+                    prefilledAmount = null
+                },
+                onAddExpense = { expense ->
+                    tripId?.let { TripRepository.addExpense(it, expense) }
+                },
+                onUpdateExpense = { updated ->
+                    tripId?.let { TripRepository.updateExpense(it, updated) }
+                },
+                onDeleteExpense = { expenseId ->
+                    tripId?.let { TripRepository.deleteExpense(it, expenseId) }
+                }
+            )
             else -> {
-                Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                    Text("Members coming soon...", color = Color.Gray)
+                MembersView(
+                    members = currentTrip?.memberNames?.takeIf { it.isNotEmpty() } 
+                        ?: TripRepository.getDefaultMembers(currentTrip?.travelers),
+                    expenses = currentTrip?.expenses ?: emptyList()
+                )
+            }
+        }
+    }
+
+    if (showEditDialog && currentTrip != null) {
+        EditTripDialog(
+            trip = currentTrip,
+            onDismiss = { showEditDialog = false },
+            onConfirm = { updatedTrip ->
+                TripRepository.save(updatedTrip)
+                showEditDialog = false
+            }
+        )
+    }
+
+    if (showDeleteDialog && tripId != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Trip") },
+            text = { Text("Are you sure you want to delete this trip? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        TripRepository.deleteTrip(tripId)
+                        showDeleteDialog = false
+                        onTripDeleted()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
                 }
             }
+        )
+    }
+}
+
+@Composable
+fun EditTripDialog(
+    trip: SavedTrip,
+    onDismiss: () -> Unit,
+    onConfirm: (SavedTrip) -> Unit
+) {
+    var title by remember { mutableStateOf(trip.title) }
+    var emoji by remember { mutableStateOf(trip.emoji) }
+    var travelers by remember { mutableStateOf(trip.travelers) }
+    var budget by remember { mutableStateOf(trip.budget) }
+    var dates by remember { mutableStateOf(trip.dates) }
+
+    var showDatePicker by remember { mutableStateOf(false) }
+    val dateRangePickerState = rememberDateRangePickerState()
+
+    val formColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor   = DeepGraphite,
+        focusedLabelColor    = DeepGraphite,
+        cursorColor          = DeepGraphite,
+        unfocusedBorderColor = Color(0xFFDDDDDD),
+        unfocusedLabelColor  = Color(0xFF888888)
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier.padding(16.dp),
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        "Edit Trip",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = DeepGraphite
+                    )
+                    Text(
+                        "Update your trip details",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = DeepGraphite.copy(alpha = 0.5f)
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = DeepGraphite.copy(alpha = 0.6f))
+                }
+            }
+        },
+        text = {
+            val emojis = listOf("✈️", "⛩️", "🗼", "🎡", "🏖️", "🏔️", "🏜️", "🛳️", "🚗", "🚆", "🏨", "🗺️")
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Column {
+                    Text("Cover Emoji", style = MaterialTheme.typography.labelMedium, color = Color.Gray, modifier = Modifier.padding(bottom = 8.dp))
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(end = 8.dp)
+                    ) {
+                        items(emojis.size) { index ->
+                            val e = emojis[index]
+                            val isSelected = emoji == e
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isSelected) DeepGraphite else UIBackgroundGray)
+                                    .border(
+                                        width = 2.dp,
+                                        color = if (isSelected) DeepGraphite else Color.Transparent,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { emoji = e },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(e, fontSize = 22.sp)
+                            }
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Trip Title") },
+                    placeholder = { Text("e.g. My Adventure") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
+                    colors = formColors
+                )
+
+                OutlinedTextField(
+                    value = dates,
+                    onValueChange = { },
+                    label = { Text("Dates") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showDatePicker = true },
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
+                    readOnly = true,
+                    enabled = false,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = DeepGraphite,
+                        disabledBorderColor = Color(0xFFDDDDDD),
+                        disabledLabelColor = Color(0xFF888888),
+                        disabledLeadingIconColor = DeepGraphite.copy(alpha = 0.6f)
+                    ),
+                    leadingIcon = { Icon(Icons.Default.CalendarMonth, contentDescription = null) }
+                )
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = travelers,
+                        onValueChange = { travelers = it },
+                        label = { Text("Travelers") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = formColors,
+                        leadingIcon = { Icon(Icons.Default.Group, contentDescription = null) }
+                    )
+                    OutlinedTextField(
+                        value = budget,
+                        onValueChange = { budget = it },
+                        label = { Text("Budget") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = formColors,
+                        leadingIcon = { Icon(Icons.Default.AttachMoney, contentDescription = null) }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val oldTravelersCount = trip.travelers.filter { it.isDigit() }.toDoubleOrNull() ?: 1.0
+                    val newTravelersCount = travelers.filter { it.isDigit() }.toDoubleOrNull() ?: 1.0
+
+                    val updatedMemberNames = if (travelers != trip.travelers) {
+                        TripRepository.getDefaultMembers(travelers)
+                    } else {
+                        trip.memberNames
+                    }
+
+                    val itinerary = trip.itinerary
+                    val updatedItinerary = if (travelers != trip.travelers && itinerary != null && oldTravelersCount > 0) {
+                        val ratio = newTravelersCount / oldTravelersCount
+                        itinerary.copy(
+                            days = itinerary.days.map { day ->
+                                day.copy(
+                                    steps = day.steps.map { step ->
+                                        step.copy(estimatedCost = step.estimatedCost?.let { it * ratio })
+                                    }
+                                )
+                            },
+                            estimatedTotalCost = itinerary.estimatedTotalCost?.let { it * ratio }
+                        )
+                    } else {
+                        itinerary
+                    }
+
+                    onConfirm(trip.copy(
+                        title = title,
+                        emoji = emoji,
+                        travelers = travelers,
+                        budget = budget,
+                        dates = dates,
+                        memberNames = updatedMemberNames,
+                        itinerary = updatedItinerary
+                    ))
+                },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = DeepGraphite)
+            ) {
+                Text("Save Changes", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            }
+        },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(28.dp)
+    )
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    val start = dateRangePickerState.selectedStartDateMillis
+                    val end = dateRangePickerState.selectedEndDateMillis
+                    if (start != null && end != null) {
+                        val startDate = Instant.ofEpochMilli(start).atZone(ZoneId.systemDefault()).toLocalDate()
+                        val endDate = Instant.ofEpochMilli(end).atZone(ZoneId.systemDefault()).toLocalDate()
+                        val days = java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate).toInt() + 1
+                        val formatter = DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
+                        dates = "${startDate.format(formatter)} – ${endDate.format(formatter)} ($days days)"
+                    }
+                    showDatePicker = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            }
+        ) {
+            DateRangePicker(
+                state = dateRangePickerState,
+                modifier = Modifier.weight(1f),
+                showModeToggle = false
+            )
         }
     }
 }
@@ -548,7 +979,8 @@ fun ItineraryView(
     itinerary: TripItinerary? = null,
     pagerState: PagerState,
     geocodingProvider: GeocodingProvider,
-    onLocationSelected: (LatLng) -> Unit
+    onLocationSelected: (LatLng) -> Unit,
+    onAddToExpenses: (String, Double) -> Unit = { _, _ -> }
 ) {
     val dayCount = itinerary?.days?.size ?: 1
 
@@ -631,6 +1063,9 @@ fun ItineraryView(
                                         val lat = step.lat
                                         val lon = step.lon
                                         if (lat != null && lon != null) onLocationSelected(LatLng(lat, lon))
+                                    },
+                                    onAddToExpenses = {
+                                        step.estimatedCost?.let { onAddToExpenses(step.title, it) }
                                     }
                                 )
                             }
@@ -742,7 +1177,8 @@ fun TimelineItem(
     lat: Double? = null,
     lon: Double? = null,
     geocodingProvider: GeocodingProvider? = null,
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
+    onAddToExpenses: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -761,44 +1197,76 @@ fun TimelineItem(
                 Text(text = priceFormatted, style = MaterialTheme.typography.labelSmall, color = BrandLightGreen)
             }
 
-            if (lat != null && lon != null) {
-                Spacer(modifier = Modifier.height(8.dp))
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            // reverseGeocode is a network call — dispatch to IO so it
-                            // never blocks the main thread while the user waits to open Maps.
-                            val address = withContext(Dispatchers.IO) {
-                                geocodingProvider?.reverseGeocode(lat, lon)
+            Row(
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (price != null) {
+                    TextButton(
+                        onClick = onAddToExpenses,
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text(
+                            "Expenses",
+                            fontSize = 12.sp,
+                            color = DeepGraphite,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = DeepGraphite
+                        )
+                    }
+                }
+
+                if (lat != null && lon != null) {
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                // reverseGeocode is a network call — dispatch to IO so it
+                                // never blocks the main thread while the user waits to open Maps.
+                                val address = withContext(Dispatchers.IO) {
+                                    geocodingProvider?.reverseGeocode(lat, lon)
+                                }
+                                val searchQuery = if (address != null) "$text $address" else text
+                                val encodedQuery = java.net.URLEncoder.encode(searchQuery, "UTF-8")
+                                val uri = "https://www.google.com/maps/search/?api=1&query=$encodedQuery"
+                                val fallbackUri = "geo:$lat,$lon?q=${encodedQuery}"
+                                val intent = try {
+                                    Intent(Intent.ACTION_VIEW, uri.toUri())
+                                } catch (e: Exception) {
+                                    Intent(Intent.ACTION_VIEW, fallbackUri.toUri())
+                                }
+                                context.startActivity(intent)
                             }
-                            val searchQuery = if (address != null) "$text $address" else text
-                            val encodedQuery = java.net.URLEncoder.encode(searchQuery, "UTF-8")
-                            val uri = "https://www.google.com/maps/search/?api=1&query=$encodedQuery"
-                            val fallbackUri = "geo:$lat,$lon?q=${encodedQuery}"
-                            val intent = try {
-                                Intent(Intent.ACTION_VIEW, uri.toUri())
-                            } catch (e: Exception) {
-                                Intent(Intent.ACTION_VIEW, fallbackUri.toUri())
-                            }
-                            context.startActivity(intent)
-                        }
-                    },
-                    contentPadding = PaddingValues(0.dp),
-                    modifier = Modifier.height(32.dp)
-                ) {
-                    Text(
-                        "See more",
-                        fontSize = 12.sp,
-                        color = DeepGraphite,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Icon(
-                        Icons.Default.ChevronRight,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = DeepGraphite
-                    )
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text(
+                            "See more",
+                            fontSize = 12.sp,
+                            color = DeepGraphite,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = DeepGraphite
+                        )
+                    }
                 }
             }
         }

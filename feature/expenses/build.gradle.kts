@@ -18,6 +18,7 @@ android {
 
 dependencies {
     implementation(project(":core:designsystem"))
+    implementation(project(":core:ai"))
     
     implementation(libs.androidx.core.ktx)
     implementation(platform(libs.androidx.compose.bom))

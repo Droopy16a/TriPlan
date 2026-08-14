@@ -27,6 +27,8 @@ class TripChunkPlanner(private val aiService: AiPlannerService) {
         var lastResult: Result<TripItinerary>? = null
         val maxRetries = 2
 
+        var previousError: String? = null
+
         for (attempt in 0..maxRetries) {
             Log.d("ChunkPlanner", "Attempt ${attempt + 1} for chunk $chunkNumber")
             
@@ -49,7 +51,8 @@ class TripChunkPlanner(private val aiService: AiPlannerService) {
                 accommodationCandidates = accommodationCandidates,
                 weatherForecast = weatherForecast,
                 alreadyUsedPois = alreadyUsedPois,
-                remainingBudget = remainingBudget
+                remainingBudget = remainingBudget,
+                previousError = previousError
             )
 
             if (result.isSuccess) {
@@ -67,8 +70,10 @@ class TripChunkPlanner(private val aiService: AiPlannerService) {
                 if (validation.isValid) {
                     return result
                 } else {
-                    Log.w("ChunkPlanner", "Validation failed for chunk $chunkNumber: ${validation.errors}")
-                    lastResult = Result.failure(Exception("Chunk validation failed: ${validation.errors.firstOrNull()}"))
+                    val errorMsg = validation.errors.firstOrNull() ?: "Unknown validation error"
+                    Log.w("ChunkPlanner", "Validation failed for chunk $chunkNumber: $errorMsg")
+                    previousError = errorMsg
+                    lastResult = Result.failure(Exception("Chunk validation failed: $errorMsg"))
                 }
             } else {
                 lastResult = result
