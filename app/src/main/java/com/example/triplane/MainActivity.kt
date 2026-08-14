@@ -43,6 +43,7 @@ import com.triplane.core.designsystem.theme.TripLaneTheme
 import com.triplane.feature.home.BottomNavPill
 import com.triplane.feature.home.HomeScreen
 import com.triplane.feature.home.PlannerScreen
+import com.triplane.feature.home.ProfileScreen
 import com.triplane.feature.home.HomeViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.triplane.feature.trip.TripExpandOverlay
@@ -141,6 +142,25 @@ class MainActivity : ComponentActivity() {
                             },
                             viewModel = homeViewModel
                         )
+                    }
+
+                    // Profile Screen
+                    val isProfileActive = currentScreen == "profile"
+                    val profileAlpha by animateFloatAsState(
+                        targetValue = if (isProfileActive) 1f else 0f,
+                        animationSpec = tween(400),
+                        label = "profileAlpha"
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(if (isProfileActive) 1.15f else 0f)
+                            .graphicsLayer {
+                                alpha = profileAlpha
+                            }
+                    ) {
+                        ProfileScreen()
                     }
 
                     // Persistent Bottom Nav
