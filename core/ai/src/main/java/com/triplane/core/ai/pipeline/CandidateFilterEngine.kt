@@ -6,6 +6,10 @@ import kotlin.math.abs
 class CandidateFilterEngine {
 
     fun filterAndRank(rawPois: List<POI>, limit: Int = 20): List<POI> {
+        val profile = com.triplane.core.ai.ProfileRepository.profile.value
+        val interests = profile.interests.map { it.lowercase() }
+        val foodPrefs = profile.foodPreferences.map { it.lowercase() }
+        
         // 1. Deduplicate (by name and close proximity)
         val deduplicated = deduplicate(rawPois)
 
@@ -19,6 +23,35 @@ class CandidateFilterEngine {
             if (!poi.phone.isNullOrBlank()) score += 1.0
             if (!poi.cuisine.isNullOrBlank()) score += 1.0
             if (!poi.priceLevel.isNullOrBlank()) score += 0.5
+            
+            // Boost based on user profile interests
+            val categoryLower = poi.category.lowercase()
+            val nameLower = poi.name.lowercase()
+            
+            val matchesInterest = interests.any { interest ->
+                val synonyms = when(interest) {
+                    "nightlife" -> listOf("bar", "pub", "nightclub", "club", "casino", "lounge")
+                    "sports" -> listOf("stadium", "sports", "pitch", "golf", "arena", "fitness")
+                    "nature" -> listOf("park", "reserve", "beach", "forest", "water", "trail", "garden")
+                    "culture" -> listOf("museum", "gallery", "historic", "attraction", "monument", "artwork", "castle", "temple", "church")
+                    "shopping" -> listOf("shop", "mall", "boutique", "market", "supermarket", "clothes")
+                    "food" -> listOf("restaurant", "cafe", "bakery", "fast_food", "deli")
+                    else -> emptyList()
+                }
+                
+                categoryLower.contains(interest) || nameLower.contains(interest) || 
+                synonyms.any { categoryLower.contains(it) || nameLower.contains(it) }
+            }
+            
+            if (matchesInterest) {
+                score += 5.0
+            }
+            
+            // Boost based on user profile food preferences
+            val cuisineLower = poi.cuisine?.lowercase() ?: ""
+            if (foodPrefs.any { cuisineLower.contains(it) || categoryLower.contains(it) || nameLower.contains(it) }) {
+                score += 4.0
+            }
             
             poi.copy(relevanceScore = score)
         }.sortedByDescending { it.relevanceScore }
@@ -36,10 +69,13 @@ class CandidateFilterEngine {
         val remaining = ranked.filter { it !in result }
         result.addAll(remaining.take(maxOf(0, limit - result.size)))
         
-        return result.take(limit)
+        return result.take(limit).sortedByDescending { it.relevanceScore }
     }
 
     fun filterAndRankAccommodation(rawAccommodation: List<POI>, limit: Int = 10): List<POI> {
+        val profile = com.triplane.core.ai.ProfileRepository.profile.value
+        val accPrefs = profile.accommodationPreference.map { it.lowercase() }
+        
         val deduplicated = deduplicate(rawAccommodation)
 
         val ranked = deduplicated.map { poi ->
@@ -54,6 +90,14 @@ class CandidateFilterEngine {
             }
             if (poi.amenities.isNotEmpty()) {
                 score += poi.amenities.size * 0.2
+            }
+            
+            // Boost based on accommodation preferences
+            val typeLower = poi.accommodationType?.name?.lowercase() ?: ""
+            val nameLower = poi.name.lowercase()
+            
+            if (accPrefs.any { typeLower.contains(it) || nameLower.contains(it) }) {
+                score += 6.0
             }
             
             poi.copy(relevanceScore = score)

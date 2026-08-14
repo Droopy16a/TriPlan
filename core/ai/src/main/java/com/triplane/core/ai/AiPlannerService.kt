@@ -202,7 +202,18 @@ class AiPlannerService(private val context: Context) {
             Total duration: $totalDuration days
             Travelers: $travelers
             Total budget: $totalBudget
-            Preferences: $preferences
+            User notes: $preferences
+            
+            TRAVELER PROFILE (Use this to tailor the itinerary):
+            ${ProfileRepository.profile.value.let { profile ->
+                """
+                Travel Style: ${profile.travelStyle}
+                Interests: ${profile.interests.joinToString(", ").ifBlank { "None specified" }}
+                Accommodation Preference: ${profile.accommodationPreference.joinToString(", ").ifBlank { "None specified" }}
+                Transportation Preference: ${profile.transportationPreference.joinToString(", ").ifBlank { "None specified" }}
+                Food Preferences: ${profile.foodPreferences.joinToString(", ").ifBlank { "None specified" }}
+                """.trimIndent()
+            }}
             
             CURRENT GENERATION CHUNK:
             Chunk: $chunkNumber of $totalChunks
@@ -230,6 +241,9 @@ class AiPlannerService(private val context: Context) {
             14. Separation of concerns: The accommodation should ONLY be used for 'Accommodation' (sleeping, check-in) and 'Food' steps. NEVER schedule an 'Activity' at the accommodation; all activities MUST be chosen from 'CANDIDATE PLACES'.
             15. No Hotel-Only Days: A day must NOT consist only of steps at the accommodation. Every full day MUST include at least one 'Activity' step that takes place at a 'CANDIDATE PLACE' (not at the hotel). If a day has no activities outside the hotel, the itinerary will be considered invalid.
             16. Exploration: Even if the user has preferences for relaxation, still include at least one local point of interest from 'CANDIDATE PLACES' per day to ensure they see the destination.
+            17. Travel Style: Adapt the daily pacing to the TRAVELER PROFILE travel style. "Budget" → favor free/cheap activities; "Balanced" → mix of free and paid; "Comfort" → mid-range venues; "Luxury" → premium experiences.
+            18. Food Preferences: If the traveler profile lists dietary preferences (Vegetarian, Vegan, Halal, Gluten-free), filter food recommendations accordingly.
+            19. Transportation Preference: Prefer the traveler's stated transportation modes when planning inter-step travel (e.g., Walking, Public transport, Car, Taxi, Bike).
             
             Return the result ONLY as a valid JSON object matching this schema exactly:
             {

@@ -39,16 +39,18 @@ class OsmPlacesProvider(private val httpClient: HttpClient) : PlacesProvider {
         val query = """
             [out:json][timeout:25];
             (
-              node["amenity"~"restaurant|cafe|bar|fast_food|pharmacy|hospital"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
-              node["tourism"~"museum|attraction|gallery|viewpoint|artwork"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
-              node["leisure"~"park|beach_resort|water_park"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
-              node["shop"~"supermarket|mall|bakery"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
+              node["amenity"~"restaurant|cafe|bar|pub|nightclub|casino|lounge|fast_food|pharmacy|hospital"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
+              node["tourism"~"museum|attraction|gallery|viewpoint|artwork|theme_park|zoo"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
+              node["leisure"~"park|beach_resort|water_park|stadium|sports_centre|pitch|golf_course|nature_reserve"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
+              node["shop"~"supermarket|mall|bakery|clothes|boutique"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
+              node["sport"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
               node["public_transport"~"station"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
               
-              way["amenity"~"restaurant|cafe|bar|fast_food|pharmacy|hospital"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
-              way["tourism"~"museum|attraction|gallery|viewpoint|artwork"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
-              way["leisure"~"park|beach_resort|water_park"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
-              way["shop"~"supermarket|mall|bakery"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
+              way["amenity"~"restaurant|cafe|bar|pub|nightclub|casino|lounge|fast_food|pharmacy|hospital"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
+              way["tourism"~"museum|attraction|gallery|viewpoint|artwork|theme_park|zoo"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
+              way["leisure"~"park|beach_resort|water_park|stadium|sports_centre|pitch|golf_course|nature_reserve"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
+              way["shop"~"supermarket|mall|bakery|clothes|boutique"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
+              way["sport"](around:$radiusMeters,${coordinates.lat},${coordinates.lon});
             );
             out center;
         """.trimIndent()
@@ -128,6 +130,7 @@ class OsmPlacesProvider(private val httpClient: HttpClient) : PlacesProvider {
             }
         } else {
             categoryName = when {
+                element.tags.containsKey("sport") -> "sport"
                 element.tags.containsKey("amenity") -> element.tags["amenity"]
                 element.tags.containsKey("tourism") -> element.tags["tourism"]
                 element.tags.containsKey("leisure") -> element.tags["leisure"]

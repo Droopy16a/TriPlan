@@ -48,6 +48,8 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -459,7 +461,7 @@ fun HomeScreen(
     }
 }
 
-enum class SearchField { None, Departure, Destination }
+enum class SearchField { None, Departure, Destination, Travelers, Budget }
 
 @Composable
 fun SearchBar(
@@ -530,17 +532,31 @@ fun SearchBar(
                 if (isExpanded) {
                     // Form-level state
                     var showDatePicker by remember { mutableStateOf(false) }
+                    
+                    val profile by com.triplane.core.ai.ProfileRepository.profile.collectAsState()
+                    var showAdvancedSettings by remember { mutableStateOf(false) }
+                    var travelStyle by remember { mutableStateOf(profile.travelStyle) }
+                    var interests by remember { mutableStateOf(profile.interests) }
+                    var accommodation by remember { mutableStateOf(profile.accommodationPreference) }
+                    var transportation by remember { mutableStateOf(profile.transportationPreference) }
+                    var food by remember { mutableStateOf(profile.foodPreferences) }
 
                     var focusedField by remember { mutableStateOf(SearchField.None) }
                     val departureInteractionSource = remember { MutableInteractionSource() }
                     val destinationInteractionSource = remember { MutableInteractionSource() }
+                    val travelersInteractionSource = remember { MutableInteractionSource() }
+                    val budgetInteractionSource = remember { MutableInteractionSource() }
                     val isDepartureFocused by departureInteractionSource.collectIsFocusedAsState()
                     val isDestinationFocused by destinationInteractionSource.collectIsFocusedAsState()
+                    val isTravelersFocused by travelersInteractionSource.collectIsFocusedAsState()
+                    val isBudgetFocused by budgetInteractionSource.collectIsFocusedAsState()
 
-                    LaunchedEffect(isDepartureFocused, isDestinationFocused) {
+                    LaunchedEffect(isDepartureFocused, isDestinationFocused, isTravelersFocused, isBudgetFocused) {
                         focusedField = when {
                             isDepartureFocused -> SearchField.Departure
                             isDestinationFocused -> SearchField.Destination
+                            isTravelersFocused -> SearchField.Travelers
+                            isBudgetFocused -> SearchField.Budget
                             else -> SearchField.None
                         }
                         
@@ -568,6 +584,22 @@ fun SearchBar(
                             else -> 0.5f
                         },
                         label = "destination_weight"
+                    )
+                    val travelersWeight by animateFloatAsState(
+                        targetValue = when (focusedField) {
+                            SearchField.Travelers -> 0.65f
+                            SearchField.Budget -> 0.35f
+                            else -> 0.5f
+                        },
+                        label = "travelers_weight"
+                    )
+                    val budgetWeight by animateFloatAsState(
+                        targetValue = when (focusedField) {
+                            SearchField.Budget -> 0.65f
+                            SearchField.Travelers -> 0.35f
+                            else -> 0.5f
+                        },
+                        label = "budget_weight"
                     )
                     
                     val context = LocalContext.current
@@ -707,8 +739,7 @@ fun SearchBar(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            // Constrain height when expanded to leave room for keyboard and system bars
-                            .heightIn(max = LocalConfiguration.current.screenHeightDp.dp - 100.dp)
+                            .height((LocalConfiguration.current.screenHeightDp * 0.82f).dp)
                             .padding(24.dp)
                     ) {
                         // Header (Fixed)
@@ -740,7 +771,7 @@ fun SearchBar(
                         // Scrollable Form Content
                         Column(
                             modifier = Modifier
-                                .weight(1f, fill = false)
+                                .weight(1f)
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
@@ -883,38 +914,58 @@ fun SearchBar(
                                     disabledPlaceholderColor = Color(0xFF888888)
                                 )
                             )
-                            OutlinedTextField(
-                                value = travelers,
-                                onValueChange = { onTravelersChange(it) },
-                                label = { Text("Travelers") },
-                                placeholder = { Text("2") },
-                                leadingIcon = { Icon(Icons.Default.Group, contentDescription = null) },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Next
-                                ),
-                                colors = formColors
-                            )
+                            
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                OutlinedTextField(
+                                    value = travelers,
+                                    onValueChange = { onTravelersChange(it) },
+                                    label = {
+                                        if (travelersWeight > 0.4f) {
+                                            Text(
+                                                text = "Travelers",
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    },
+                                    placeholder = { Text("2") },
+                                    leadingIcon = { Icon(Icons.Default.Group, contentDescription = null) },
+                                    modifier = Modifier.weight(travelersWeight),
+                                    interactionSource = travelersInteractionSource,
+                                    shape = RoundedCornerShape(12.dp),
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Next
+                                    ),
+                                    colors = formColors
+                                )
 
-                            // Budget
-                            OutlinedTextField(
-                                value = budget,
-                                onValueChange = { onBudgetChange(it) },
-                                label = { Text("Budget") },
-                                placeholder = { Text("e.g. \$2000") },
-                                leadingIcon = { Icon(Icons.Default.AttachMoney, contentDescription = null) },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Number,
-                                    imeAction = ImeAction.Next
-                                ),
-                                colors = formColors
-                            )
+                                OutlinedTextField(
+                                    value = budget,
+                                    onValueChange = { onBudgetChange(it) },
+                                    label = {
+                                        if (budgetWeight > 0.4f) {
+                                            Text(
+                                                text = "Budget",
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    },
+                                    placeholder = { Text("e.g. \$2000") },
+                                    leadingIcon = { Icon(Icons.Default.AttachMoney, contentDescription = null) },
+                                    modifier = Modifier.weight(budgetWeight),
+                                    interactionSource = budgetInteractionSource,
+                                    shape = RoundedCornerShape(12.dp),
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Next
+                                    ),
+                                    colors = formColors
+                                )
+                            }
 
                             // Preferences
                             OutlinedTextField(
@@ -934,6 +985,76 @@ fun SearchBar(
                                 colors = formColors
                             )
                             
+                            // Advanced Settings
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { showAdvancedSettings = !showAdvancedSettings }
+                                    .padding(vertical = 12.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    "Advanced Settings",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = DeepGraphite
+                                )
+                                Icon(
+                                    if (showAdvancedSettings) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = DeepGraphite
+                                )
+                            }
+                            
+                            AnimatedVisibility(
+                                visible = showAdvancedSettings,
+                                enter = expandVertically(),
+                                exit = shrinkVertically()
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    AdvancedSettingSingleSelector(
+                                        label = "Travel Style",
+                                        options = listOf("Budget", "Balanced", "Comfort", "Luxury"),
+                                        selectedOption = travelStyle,
+                                        onOptionSelected = { travelStyle = it }
+                                    )
+                                    AdvancedSettingSelector(
+                                        label = "Interests",
+                                        options = listOf("🏛️ Culture", "🍜 Food", "🏖️ Beaches", "🥾 Nature", "🎨 Art", "🌃 Nightlife", "🛍️ Shopping", "⚽ Sports", "📸 Photography"),
+                                        selectedOptions = interests,
+                                        onOptionToggled = { 
+                                            interests = if (interests.contains(it)) interests - it else interests + it
+                                        },
+                                        optionToValue = { it.substringAfter(" ").trim() }
+                                    )
+                                    AdvancedSettingSelector(
+                                        label = "Accommodation",
+                                        options = listOf("Hotel", "Hostel", "Apartment", "Guest house", "Camping"),
+                                        selectedOptions = accommodation,
+                                        onOptionToggled = {
+                                            accommodation = if (accommodation.contains(it)) accommodation - it else accommodation + it
+                                        }
+                                    )
+                                    AdvancedSettingSelector(
+                                        label = "Transportation",
+                                        options = listOf("Walking", "Public transport", "Car", "Taxi", "Bike"),
+                                        selectedOptions = transportation,
+                                        onOptionToggled = {
+                                            transportation = if (transportation.contains(it)) transportation - it else transportation + it
+                                        }
+                                    )
+                                    AdvancedSettingSelector(
+                                        label = "Food Preferences",
+                                        options = listOf("Vegetarian", "Vegan", "Halal", "Gluten-free"),
+                                        selectedOptions = food,
+                                        onOptionToggled = {
+                                            food = if (food.contains(it)) food - it else food + it
+                                        }
+                                    )
+                                }
+                            }
+                            
                             // Extra space at bottom to ensure fields aren't cut off by keyboard
                             Spacer(modifier = Modifier.height(10.dp))
                         }
@@ -944,7 +1065,21 @@ fun SearchBar(
                         Button(
                             onClick = { 
                                 if (!isLoading) {
-                                    onPlanTrip(departure, destination, startDate, endDate, travelers, budget, preferences) 
+                                    val advancedPrefs = listOf(
+                                        if (travelStyle.isNotBlank()) "Travel Style: $travelStyle" else null,
+                                        if (interests.isNotEmpty()) "Interests: ${interests.joinToString(", ")}" else null,
+                                        if (accommodation.isNotEmpty()) "Accommodation: ${accommodation.joinToString(", ")}" else null,
+                                        if (transportation.isNotEmpty()) "Transportation: ${transportation.joinToString(", ")}" else null,
+                                        if (food.isNotEmpty()) "Food: ${food.joinToString(", ")}" else null
+                                    ).filterNotNull().joinToString("; ")
+
+                                    val finalPreferences = if (advancedPrefs.isNotBlank()) {
+                                        if (preferences.isNotBlank()) "$preferences\n$advancedPrefs" else advancedPrefs
+                                    } else {
+                                        preferences
+                                    }
+
+                                    onPlanTrip(departure, destination, startDate, endDate, travelers, budget, finalPreferences) 
                                 }
                             },
                             modifier = Modifier
@@ -1814,6 +1949,84 @@ fun vibrateDevice(context: Context, duration: Long = 30) {
         } else {
             @Suppress("DEPRECATION")
             vibrator.vibrate(duration)
+        }
+    }
+}
+
+@Composable
+fun AdvancedSettingSingleSelector(
+    label: String,
+    options: List<String>,
+    selectedOption: String,
+    onOptionSelected: (String) -> Unit,
+    optionToValue: (String) -> String = { it }
+) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = Color.Gray, modifier = Modifier.padding(bottom = 8.dp))
+        androidx.compose.foundation.lazy.LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(end = 8.dp)
+        ) {
+            items(options.size) { index ->
+                val option = options[index]
+                val value = optionToValue(option)
+                val isSelected = selectedOption == value || selectedOption == option
+                Box(
+                    modifier = Modifier
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isSelected) DeepGraphite else Color(0xFFF0F0F0))
+                        .border(
+                            width = 2.dp,
+                            color = if (isSelected) DeepGraphite else Color.Transparent,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .clickable { onOptionSelected(value) }
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(option, fontSize = 14.sp, color = if (isSelected) Color.White else DeepGraphite)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AdvancedSettingSelector(
+    label: String,
+    options: List<String>,
+    selectedOptions: List<String>,
+    onOptionToggled: (String) -> Unit,
+    optionToValue: (String) -> String = { it }
+) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = Color.Gray, modifier = Modifier.padding(bottom = 8.dp))
+        androidx.compose.foundation.lazy.LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(end = 8.dp)
+        ) {
+            items(options.size) { index ->
+                val option = options[index]
+                val value = optionToValue(option)
+                val isSelected = selectedOptions.contains(value) || selectedOptions.contains(option)
+                Box(
+                    modifier = Modifier
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isSelected) DeepGraphite else Color(0xFFF0F0F0))
+                        .border(
+                            width = 2.dp,
+                            color = if (isSelected) DeepGraphite else Color.Transparent,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .clickable { onOptionToggled(value) }
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(option, fontSize = 14.sp, color = if (isSelected) Color.White else DeepGraphite)
+                }
+            }
         }
     }
 }
