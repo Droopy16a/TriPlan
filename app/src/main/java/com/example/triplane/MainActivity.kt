@@ -165,7 +165,7 @@ class MainActivity : ComponentActivity() {
 
                     // Persistent Bottom Nav
                     AnimatedVisibility(
-                        visible = currentScreen == "home" || currentScreen == "planner",
+                        visible = currentScreen == "home" || currentScreen == "planner" || currentScreen == "profile",
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .zIndex(3f),
