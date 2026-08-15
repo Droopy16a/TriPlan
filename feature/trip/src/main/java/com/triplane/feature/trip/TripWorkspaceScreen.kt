@@ -506,6 +506,7 @@ fun TripSheetContent(
             .fillMaxWidth()
             .fillMaxHeight(0.85f)
             .background(Color.White)
+            .navigationBarsPadding()
             .nestedScroll(stopFlingCollapseConnection)
     ) {
         Spacer(modifier = Modifier.height(8.dp))

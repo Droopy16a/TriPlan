@@ -19,7 +19,9 @@ android {
 dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":core:ai"))
+    implementation(project(":core:auth"))
     implementation(project(":core:location"))
+
     
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -34,6 +36,9 @@ dependencies {
 
     // Live mini-map in HeroTripCard
     implementation(libs.maplibre)
+
+    // Image loading
+    implementation(libs.coil.compose)
     
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

@@ -46,5 +46,5 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.json)
     
     testImplementation(libs.junit)
-    testImplementation("io.ktor:ktor-client-mock:2.3.12")
+    testImplementation(libs.ktor.client.mock)
 }

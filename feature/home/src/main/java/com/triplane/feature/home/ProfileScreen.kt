@@ -28,6 +28,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
 import com.triplane.core.ai.ProfileRepository
 import com.triplane.core.ai.UserProfile
 import com.triplane.core.designsystem.theme.*
@@ -46,7 +47,8 @@ enum class ProfileCategory {
 @Composable
 fun ProfileScreen(
     modifier: Modifier = Modifier,
-    onBackClick: () -> Unit = {}
+    onBackClick: () -> Unit = {},
+    onSignOut: () -> Unit = {}
 ) {
     val profile by ProfileRepository.profile.collectAsState()
     var showSheet by remember { mutableStateOf(false) }
@@ -56,12 +58,18 @@ fun ProfileScreen(
         modifier = modifier.fillMaxSize(),
         color = Color.White
     ) {
+        val topPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = 36.dp, bottom = 100.dp)
+            contentPadding = PaddingValues(
+                top = topPadding + 24.dp,
+                bottom = bottomPadding + 100.dp
+            )
         ) {
             item {
-                ProfileHeader(profile.name)
+                ProfileHeader(profile.name, profile.avatarUrl)
             }
 
             item {
@@ -106,7 +114,8 @@ fun ProfileScreen(
                     onCategoryClick = { category ->
                         selectedCategory = category
                         showSheet = true
-                    }
+                    },
+                    onSignOut = onSignOut
                 )
             }
 
@@ -158,7 +167,7 @@ fun ProfileScreen(
 }
 
 @Composable
-fun ProfileHeader(name: String) {
+fun ProfileHeader(name: String, avatarUrl: String? = null) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -173,12 +182,21 @@ fun ProfileHeader(name: String) {
                 .background(UIBackgroundGray),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                Icons.Default.Person,
-                contentDescription = null,
-                modifier = Modifier.size(50.dp),
-                tint = DeepGraphite.copy(alpha = 0.3f)
-            )
+            if (avatarUrl != null) {
+                AsyncImage(
+                    model = avatarUrl,
+                    contentDescription = "Profile Picture",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Icon(
+                    Icons.Default.Person,
+                    contentDescription = null,
+                    modifier = Modifier.size(50.dp),
+                    tint = DeepGraphite.copy(alpha = 0.3f)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -590,7 +608,8 @@ fun AiBehaviorToggle(label: String, checked: Boolean) {
 @Composable
 fun SettingsSection(
     profile: UserProfile,
-    onCategoryClick: (ProfileCategory) -> Unit
+    onCategoryClick: (ProfileCategory) -> Unit,
+    onSignOut: () -> Unit = {}
 ) {
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
         ProfileListItem(
@@ -638,7 +657,7 @@ fun SettingsSection(
             "Log out",
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { }
+                .clickable { onSignOut() }
                 .padding(vertical = 12.dp),
             color = TravelRed,
             style = MaterialTheme.typography.bodyLarge
@@ -1001,12 +1020,21 @@ fun EditProfileContent(
                         .background(UIBackgroundGray),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(60.dp),
-                        tint = DeepGraphite.copy(alpha = 0.3f)
-                    )
+                    if (profile.avatarUrl != null) {
+                        AsyncImage(
+                            model = profile.avatarUrl,
+                            contentDescription = "Profile Picture",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Person,
+                            contentDescription = null,
+                            modifier = Modifier.size(60.dp),
+                            tint = DeepGraphite.copy(alpha = 0.3f)
+                        )
+                    }
                 }
                 Surface(
                     modifier = Modifier

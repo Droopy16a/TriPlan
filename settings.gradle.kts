@@ -26,7 +26,9 @@ rootProject.name = "triplane"
 include(":app")
 include(":core:designsystem")
 include(":core:ai")
+include(":core:auth")
 include(":feature:home")
 include(":feature:trip")
 include(":feature:expenses")
 include(":core:location")
+

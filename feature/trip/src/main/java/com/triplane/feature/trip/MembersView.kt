@@ -23,7 +23,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.triplane.core.ai.Expense
+import com.triplane.core.ai.ProfileRepository
 import com.triplane.core.designsystem.theme.BrandLightGreen
 import com.triplane.core.designsystem.theme.DeepGraphite
 import com.triplane.core.designsystem.theme.UIBackgroundGray
@@ -203,6 +205,8 @@ fun SummaryCard(myBalance: Double) {
 
 @Composable
 fun MemberBalanceItem(balance: MemberBalance, isMainMember: Boolean) {
+    val profile by ProfileRepository.profile.collectAsState()
+    
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -223,11 +227,20 @@ fun MemberBalanceItem(balance: MemberBalance, isMainMember: Boolean) {
                         .background(if (isMainMember) DeepGraphite else UIBackgroundGray),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        balance.name.take(1).uppercase(),
-                        color = if (isMainMember) Color.White else DeepGraphite,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (isMainMember && profile.avatarUrl != null) {
+                        AsyncImage(
+                            model = profile.avatarUrl,
+                            contentDescription = "Profile Picture",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    } else {
+                        Text(
+                            balance.name.take(1).uppercase(),
+                            color = if (isMainMember) Color.White else DeepGraphite,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
                 Spacer(Modifier.width(12.dp))
                 Text(

@@ -95,6 +95,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.runtime.collectAsState
@@ -1148,6 +1149,8 @@ fun BottomNavPill(
     onTabClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val profile by com.triplane.core.ai.ProfileRepository.profile.collectAsState()
+
     val indicatorOffset by animateDpAsState(
         targetValue = when (currentScreen) {
             "planner" -> (-33).dp
@@ -1195,7 +1198,13 @@ fun BottomNavPill(
                 NavIcon(Icons.Default.Home, "Home", isSelected = currentScreen == "home", onClick = { onTabClick("home") })
                 NavIcon(Icons.Default.FlightTakeoff, "Planner", isSelected = currentScreen == "planner", onClick = { onTabClick("planner") })
                 NavIcon(Icons.Default.Map, "Explore", isSelected = currentScreen == "explore", onClick = { onTabClick("explore") })
-                NavIcon(Icons.Default.Person, "Profile", isSelected = currentScreen == "profile", onClick = { onTabClick("profile") })
+                NavIcon(
+                    icon = Icons.Default.Person,
+                    label = "Profile",
+                    isSelected = currentScreen == "profile",
+                    avatarUrl = profile.avatarUrl,
+                    onClick = { onTabClick("profile") }
+                )
             }
         }
     }
@@ -1206,6 +1215,7 @@ fun NavIcon(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     isSelected: Boolean,
+    avatarUrl: String? = null,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1219,12 +1229,23 @@ fun NavIcon(
             },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(
-            icon,
-            contentDescription = label,
-            tint = Color.White,
-            modifier = Modifier.size(24.dp)
-        )
+        if (avatarUrl != null && label == "Profile") {
+            AsyncImage(
+                model = avatarUrl,
+                contentDescription = label,
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+            )
+        } else {
+            Icon(
+                icon,
+                contentDescription = label,
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
+            )
+        }
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,

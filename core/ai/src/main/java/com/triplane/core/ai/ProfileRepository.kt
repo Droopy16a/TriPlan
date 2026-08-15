@@ -50,7 +50,8 @@ data class UserProfile(
     val language: String = "English",
     val currency: String = "EUR (€)",
     val units: String = "Metric (km)",
-    val theme: String = "Light"
+    val theme: String = "Light",
+    val avatarUrl: String? = null
 ) {
     val name: String get() = "$firstName $lastName"
     val unreadNotificationCount: Int get() = notifications.count { !it.isRead }
@@ -59,6 +60,22 @@ data class UserProfile(
 object ProfileRepository {
     private val _profile = MutableStateFlow(UserProfile())
     val profile: StateFlow<UserProfile> = _profile.asStateFlow()
+
+    /**
+     * Called right after a successful Google Sign-In to pre-fill
+     * the user's name, email, and profile picture from their Google account.
+     */
+    fun loadFromAuth(name: String, email: String, avatarUrl: String?) {
+        val parts = name.trim().split(" ", limit = 2)
+        _profile.update {
+            it.copy(
+                firstName = parts.getOrElse(0) { "" },
+                lastName = parts.getOrElse(1) { "" },
+                email = email,
+                avatarUrl = avatarUrl
+            )
+        }
+    }
 
     fun updateFirstName(firstName: String) {
         _profile.update { it.copy(firstName = firstName) }
