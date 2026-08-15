@@ -62,7 +62,10 @@ class MainActivity : ComponentActivity() {
                         ProfileRepository.loadFromAuth(
                             name = state.name,
                             email = state.email,
-                            avatarUrl = state.avatarUrl
+                            avatarUrl = state.avatarUrl,
+                            birthDate = state.birthDate,
+                            phoneCountryCode = state.phoneCountryCode,
+                            phoneNumber = state.phoneNumber
                         )
                     }
                 }

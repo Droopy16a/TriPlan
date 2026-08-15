@@ -7,6 +7,9 @@ sealed class AuthState {
         val userId: String,
         val email: String,
         val name: String,
-        val avatarUrl: String?
+        val avatarUrl: String?,
+        val birthDate: String = "",
+        val phoneCountryCode: String = "",
+        val phoneNumber: String = ""
     ) : AuthState()
 }

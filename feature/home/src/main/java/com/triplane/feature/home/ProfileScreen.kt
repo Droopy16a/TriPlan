@@ -1,5 +1,10 @@
 package com.triplane.feature.home
 
+import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
@@ -31,8 +37,11 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.triplane.core.ai.ProfileRepository
 import com.triplane.core.ai.UserProfile
+import com.triplane.core.auth.AuthRepository
 import com.triplane.core.designsystem.theme.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -961,8 +970,22 @@ fun EditProfileContent(
     var birthDate by remember { mutableStateOf(profile.birthDate) }
     var phoneCountryCode by remember { mutableStateOf(profile.phoneCountryCode) }
     var phoneNumber by remember { mutableStateOf(profile.phoneNumber) }
+    var avatarUrl by remember(profile.avatarUrl) { mutableStateOf(profile.avatarUrl) }
+    var selectedAvatarUri by remember { mutableStateOf<Uri?>(null) }
 
     var showDatePicker by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val avatarPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        uri?.let {
+            selectedAvatarUri = it
+            saveError = null
+        }
+    }
     val datePickerState = rememberDatePickerState(
         initialSelectedDateMillis = if (birthDate.isNotEmpty()) {
             try {
@@ -1012,17 +1035,23 @@ fun EditProfileContent(
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
                     .size(100.dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = !isSaving) {
+                        avatarPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .clip(CircleShape)
                         .background(UIBackgroundGray),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (profile.avatarUrl != null) {
+                    val avatarModel = selectedAvatarUri ?: avatarUrl
+                    if (avatarModel != null) {
                         AsyncImage(
-                            model = profile.avatarUrl,
+                            model = avatarModel,
                             contentDescription = "Profile Picture",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
@@ -1040,7 +1069,12 @@ fun EditProfileContent(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .size(36.dp)
-                        .offset(x = (-4).dp, y = (-4).dp),
+                        .offset(x = (-4).dp, y = (-4).dp)
+                        .clickable(enabled = !isSaving) {
+                            avatarPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
                     shape = CircleShape,
                     color = DeepGraphite,
                     border = BorderStroke(2.dp, Color.White),
@@ -1072,10 +1106,7 @@ fun EditProfileContent(
             // Form Fields
             TriplaneTextField(
                 value = firstName,
-                onValueChange = {
-                    firstName = it
-                    ProfileRepository.updateFirstName(it)
-                },
+                onValueChange = { firstName = it },
                 label = "First name",
                 required = true
             )
@@ -1084,10 +1115,7 @@ fun EditProfileContent(
 
             TriplaneTextField(
                 value = lastName,
-                onValueChange = {
-                    lastName = it
-                    ProfileRepository.updateLastName(it)
-                },
+                onValueChange = { lastName = it },
                 label = "Last name",
                 required = true
             )
@@ -1096,10 +1124,7 @@ fun EditProfileContent(
 
             TriplaneTextField(
                 value = email,
-                onValueChange = {
-                    email = it
-                    ProfileRepository.updateEmail(it)
-                },
+                onValueChange = { email = it },
                 label = "E-mail",
                 required = true
             )
@@ -1129,7 +1154,6 @@ fun EditProfileContent(
                                     .toLocalDate()
                                 val formattedDate = date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
                                 birthDate = formattedDate
-                                ProfileRepository.updateBirthDate(formattedDate)
                             }
                             showDatePicker = false
                         }) {
@@ -1163,10 +1187,7 @@ fun EditProfileContent(
                 Box(modifier = Modifier.weight(0.35f)) {
                     TriplaneTextField(
                         value = phoneCountryCode,
-                        onValueChange = {
-                            phoneCountryCode = it
-                            ProfileRepository.updatePhone(it, phoneNumber)
-                        },
+                        onValueChange = { phoneCountryCode = it },
                         label = "",
                         leadingIcon = {
                             Text("🇫🇷", modifier = Modifier.padding(start = 12.dp))
@@ -1179,10 +1200,7 @@ fun EditProfileContent(
                 Box(modifier = Modifier.weight(0.65f)) {
                     TriplaneTextField(
                         value = phoneNumber,
-                        onValueChange = {
-                            phoneNumber = it
-                            ProfileRepository.updatePhone(phoneCountryCode, it)
-                        },
+                        onValueChange = { phoneNumber = it },
                         label = "Phone",
                         required = true
                     )
@@ -1190,6 +1208,15 @@ fun EditProfileContent(
             }
 
             Spacer(modifier = Modifier.height(32.dp))
+
+            saveError?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             OutlinedButton(
                 onClick = { /* TODO */ },
@@ -1209,7 +1236,44 @@ fun EditProfileContent(
         // Bottom Button
         Box(modifier = Modifier.padding(24.dp)) {
             Button(
-                onClick = onDismiss,
+                onClick = {
+                    scope.launch {
+                        isSaving = true
+                        saveError = null
+                        runCatching {
+                            AuthRepository.updateUserInfo(
+                                firstName = firstName,
+                                lastName = lastName,
+                                email = email,
+                                birthDate = birthDate,
+                                phoneCountryCode = phoneCountryCode,
+                                phoneNumber = phoneNumber
+                            )
+                            selectedAvatarUri?.let { uri ->
+                                val image = readProfileImage(context, uri)
+                                avatarUrl = AuthRepository.updateProfilePicture(
+                                    imageBytes = image.bytes,
+                                    contentType = image.contentType
+                                )
+                            }
+                        }.onSuccess {
+                            ProfileRepository.updateAccountInfo(
+                                firstName = firstName.trim(),
+                                lastName = lastName.trim(),
+                                email = email.trim(),
+                                birthDate = birthDate.trim(),
+                                phoneCountryCode = phoneCountryCode.trim(),
+                                phoneNumber = phoneNumber.trim()
+                            )
+                            ProfileRepository.updateAvatarUrl(avatarUrl)
+                            onDismiss()
+                        }.onFailure { error ->
+                            saveError = error.message ?: "Unable to save profile changes."
+                        }
+                        isSaving = false
+                    }
+                },
+                enabled = !isSaving && firstName.isNotBlank() && lastName.isNotBlank() && email.isNotBlank(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -1219,11 +1283,37 @@ fun EditProfileContent(
                     disabledContainerColor = UIBackgroundGray
                 )
             ) {
-                Text("Save changes", fontWeight = FontWeight.Bold)
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp,
+                        color = Color.White
+                    )
+                } else {
+                    Text("Save changes", fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
 }
+
+private data class ProfileImageSelection(
+    val bytes: ByteArray,
+    val contentType: String
+)
+
+private suspend fun readProfileImage(context: Context, uri: Uri): ProfileImageSelection =
+    withContext(Dispatchers.IO) {
+        val contentType = context.contentResolver.getType(uri) ?: "image/jpeg"
+        val bytes = context.contentResolver.openInputStream(uri)?.use { stream ->
+            stream.readBytes()
+        } ?: error("Unable to read selected profile picture.")
+
+        ProfileImageSelection(
+            bytes = bytes,
+            contentType = contentType
+        )
+    }
 
 @Composable
 fun TriplaneTextField(

@@ -65,16 +65,50 @@ object ProfileRepository {
      * Called right after a successful Google Sign-In to pre-fill
      * the user's name, email, and profile picture from their Google account.
      */
-    fun loadFromAuth(name: String, email: String, avatarUrl: String?) {
+    fun loadFromAuth(
+        name: String,
+        email: String,
+        avatarUrl: String?,
+        birthDate: String = "",
+        phoneCountryCode: String = "",
+        phoneNumber: String = ""
+    ) {
         val parts = name.trim().split(" ", limit = 2)
         _profile.update {
             it.copy(
                 firstName = parts.getOrElse(0) { "" },
                 lastName = parts.getOrElse(1) { "" },
                 email = email,
+                birthDate = birthDate.ifBlank { it.birthDate },
+                phoneCountryCode = phoneCountryCode.ifBlank { it.phoneCountryCode },
+                phoneNumber = phoneNumber.ifBlank { it.phoneNumber },
                 avatarUrl = avatarUrl
             )
         }
+    }
+
+    fun updateAccountInfo(
+        firstName: String,
+        lastName: String,
+        email: String,
+        birthDate: String,
+        phoneCountryCode: String,
+        phoneNumber: String
+    ) {
+        _profile.update {
+            it.copy(
+                firstName = firstName,
+                lastName = lastName,
+                email = email,
+                birthDate = birthDate,
+                phoneCountryCode = phoneCountryCode,
+                phoneNumber = phoneNumber
+            )
+        }
+    }
+
+    fun updateAvatarUrl(avatarUrl: String?) {
+        _profile.update { it.copy(avatarUrl = avatarUrl) }
     }
 
     fun updateFirstName(firstName: String) {
