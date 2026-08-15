@@ -266,7 +266,7 @@ class AiPlannerService(private val context: Context) {
                   "steps": [
                     {
                       "time": "String (e.g. 09:00 AM)",
-                      "title": "String (Real place from Candidates)",
+                      "title": "String (Real place from Candidates don't hallucinate)",
                       "description": "String",
                       "category": "String (Food, Activity, Transport, FreeTime, or Accommodation)",
                       "estimatedCost": "Double (e.g. 25.50)",

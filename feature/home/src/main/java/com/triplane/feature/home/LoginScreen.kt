@@ -41,6 +41,8 @@ fun LoginScreen() {
 
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var firstName by remember { mutableStateOf("") }
+    var lastName by remember { mutableStateOf("") }
     var isSignUpMode by remember { mutableStateOf(false) }
 
     // Animate content in on first composition
@@ -112,6 +114,42 @@ fun LoginScreen() {
 
             Spacer(modifier = Modifier.height(40.dp))
 
+            if (isSignUpMode) {
+                // First Name Field
+                OutlinedTextField(
+                    value = firstName,
+                    onValueChange = { firstName = it },
+                    label = { Text("First Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = DeepGraphite,
+                        unfocusedBorderColor = Color(0xFFE0E0E0),
+                        focusedLabelColor = DeepGraphite
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Last Name Field
+                OutlinedTextField(
+                    value = lastName,
+                    onValueChange = { lastName = it },
+                    label = { Text("Last Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = DeepGraphite,
+                        unfocusedBorderColor = Color(0xFFE0E0E0),
+                        focusedLabelColor = DeepGraphite
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
             // Email Field
             OutlinedTextField(
                 value = email,
@@ -159,7 +197,12 @@ fun LoginScreen() {
                         errorMessage = null
                         try {
                             if (isSignUpMode) {
-                                AuthRepository.signUpWithEmail(email, password)
+                                if (firstName.isBlank() || lastName.isBlank()) {
+                                    errorMessage = "Please fill in all fields."
+                                    isLoading = false
+                                    return@launch
+                                }
+                                AuthRepository.signUpWithEmail(email, password, firstName, lastName)
                                 errorMessage = "Account created! Please check your email if verification is required."
                             } else {
                                 AuthRepository.signInWithEmail(email, password)

@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.triplane.core.ai.AiPlannerService
+import com.triplane.core.ai.CommunityTripRepository
 import com.triplane.core.ai.LoadingMessages
 import com.triplane.core.ai.SavedTrip
 import com.triplane.core.ai.TripRepository
@@ -14,8 +15,11 @@ import com.triplane.feature.home.util.PlanningSignal
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -78,6 +82,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedCityProperties = MutableStateFlow<Properties?>(null)
     val selectedCityProperties: StateFlow<Properties?> = _selectedCityProperties
 
+    private val _exploreSearchQuery = MutableStateFlow("")
+    val exploreSearchQuery: StateFlow<String> = _exploreSearchQuery
+
+    val exploreSearchResults: StateFlow<List<SavedTrip>> = combine(
+        _exploreSearchQuery,
+        CommunityTripRepository.communityTrips
+    ) { query, trips ->
+        val lowerQuery = query.trim().lowercase()
+        if (lowerQuery.isEmpty()) trips
+        else trips.filter { trip ->
+            trip.destination.lowercase().contains(lowerQuery) ||
+            trip.title.lowercase().contains(lowerQuery)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CommunityTripRepository.communityTrips.value)
+
     init {
         viewModelScope.launch {
             PlanningSignal.cancelSignal.collectLatest {
@@ -98,6 +117,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun updateDestinationQuery(query: String) {
         _destinationQuery.value = query
         updateDestinationSuggestions(query)
+    }
+
+    fun updateExploreSearchQuery(query: String) {
+        _exploreSearchQuery.value = query
     }
 
     fun updateDepartureQuery(query: String) {

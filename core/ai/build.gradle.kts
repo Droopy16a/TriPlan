@@ -19,8 +19,10 @@ android {
             properties.load(localProperties.inputStream())
         }
         val apiKey = properties.getProperty("GEMINI_API_KEY") ?: ""
+        val pexelsApiKey = properties.getProperty("PEXELS_API_KEY") ?: ""
         
         buildConfigField("String", "GEMINI_API_KEY", "\"$apiKey\"")
+        buildConfigField("String", "PEXELS_API_KEY", "\"$pexelsApiKey\"")
     }
 
     buildFeatures {

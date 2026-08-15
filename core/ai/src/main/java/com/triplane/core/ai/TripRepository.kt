@@ -32,6 +32,7 @@ data class SavedTrip(
     val budget: String,
     val preferences: String = "",
     val emoji: String = "✈️",
+    val imageUrl: String? = null,
     val itinerary: TripItinerary? = null,
     val expenses: List<Expense> = emptyList(),
     val memberNames: List<String> = emptyList()

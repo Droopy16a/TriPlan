@@ -98,6 +98,7 @@ import android.graphics.Rect as AndroidRect
 import androidx.core.content.res.ResourcesCompat
 import android.content.Context
 import android.content.Intent
+import com.triplane.core.ai.CommunityTripRepository
 import android.net.Uri
 import androidx.compose.animation.core.spring
 import androidx.core.net.toUri
@@ -170,7 +171,9 @@ fun TripWorkspaceScreen(
     }
 
     val allTrips by TripRepository.trips.collectAsState()
-    val currentTrip = remember(tripId, allTrips) { allTrips.find { it.id == tripId } }
+    val currentTrip = remember(tripId, allTrips) { 
+        allTrips.find { it.id == tripId } ?: CommunityTripRepository.searchTrips("").find { it.id == tripId }
+    }
     val tripName = currentTrip?.let { trip ->
         if (trip.title.isNotBlank()) trip.title
         else {

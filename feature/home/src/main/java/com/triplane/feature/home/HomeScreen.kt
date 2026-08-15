@@ -34,6 +34,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Map
@@ -351,12 +353,18 @@ fun HomeScreen(
                     modifier = Modifier.padding(horizontal = 32.dp)
                 )
                 Spacer(modifier = Modifier.height(16.dp))
+                val popularTrips by viewModel.exploreSearchResults.collectAsState()
+                
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 32.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    items(4) {
-                        PopularTripCard()
+                    val displayTrips = popularTrips.take(4)
+                    items(displayTrips.size, key = { displayTrips[it].id }) { index ->
+                        PopularTripCard(
+                            trip = displayTrips[index],
+                            onClick = { onTripClick(androidx.compose.ui.geometry.Rect.Zero, displayTrips[index].id) }
+                        )
                     }
                 }
             }
@@ -1559,8 +1567,15 @@ fun HeroTripCard(
 }
 
 @Composable
-fun PopularTripCard() {
-    Column {
+fun PopularTripCard(
+    trip: com.triplane.core.ai.SavedTrip? = null,
+    onClick: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val title = if (trip?.title?.isNotBlank() == true) trip.title else (trip?.destination ?: "Paris, France")
+    val budget = trip?.budget ?: "$ 1 500 total"
+    val emoji = trip?.emoji ?: "🗼"
+    Column(modifier = modifier.clickable { onClick() }) {
         Box(
             modifier = Modifier
                 .width(160.dp)
@@ -1569,12 +1584,51 @@ fun PopularTripCard() {
                 .background(SkyBlueLight),
             contentAlignment = Alignment.Center
         ) {
-            // Cloud Icon placeholder
-            Icon(Icons.Default.Map, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
+            val imageUrl = trip?.imageUrl
+            if (imageUrl != null) {
+                coil.compose.AsyncImage(
+                    model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                        .data(imageUrl)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text(emoji, fontSize = 64.sp)
+            }
+            
+            var isLiked by remember { mutableStateOf(false) }
+            IconButton(
+                onClick = { isLiked = !isLiked },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+                    .size(32.dp)
+            ) {
+                Icon(
+                    imageVector = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = "Like",
+                    tint = if (isLiked) Color.Red else Color.White
+                )
+            }
         }
         Spacer(modifier = Modifier.height(8.dp))
-        Text("Paris, France", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp))
-        Text("$ 1 500 total", style = MaterialTheme.typography.bodyMedium, color = Color.Gray, modifier = Modifier.padding(start = 6.dp))
+        Text(
+            text = title, 
+            style = MaterialTheme.typography.titleMedium, 
+            fontWeight = FontWeight.SemiBold, 
+            maxLines = 1, 
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 6.dp).width(160.dp)
+        )
+        Text(
+            text = budget, 
+            style = MaterialTheme.typography.bodyMedium, 
+            color = Color.Gray, 
+            modifier = Modifier.padding(start = 6.dp)
+        )
     }
 }
 

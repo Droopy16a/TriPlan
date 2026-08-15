@@ -102,10 +102,22 @@ object AuthRepository {
     /**
      * Signs up with email and password using Supabase.
      */
-    suspend fun signUpWithEmail(email: String, password: String) {
+    suspend fun signUpWithEmail(email: String, password: String, firstName: String, lastName: String) {
+        val trimmedFirst = firstName.trim()
+        val trimmedLast = lastName.trim()
+        val fullName = listOf(trimmedFirst, trimmedLast).filter { it.isNotBlank() }.joinToString(" ")
+        val seed = URLEncoder.encode(fullName, "UTF-8").replace("+", "%20")
+        val dicebearUrl = "https://api.dicebear.com/9.x/dylan/svg?seed=$seed"
+
         supabase.auth.signUpWith(Email) {
             this.email = email
             this.password = password
+            data = buildJsonObject {
+                put("first_name", trimmedFirst)
+                put("last_name", trimmedLast)
+                put("full_name", fullName)
+                put("avatar_url", dicebearUrl)
+            }
         }
     }
 

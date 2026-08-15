@@ -35,6 +35,7 @@ import com.triplane.core.auth.AuthState
 import com.triplane.core.ai.ProfileRepository
 import com.triplane.core.designsystem.theme.TripLaneTheme
 import com.triplane.feature.home.BottomNavPill
+import com.triplane.feature.home.ExploreScreen
 import com.triplane.feature.home.HomeScreen
 import com.triplane.feature.home.HomeViewModel
 import com.triplane.feature.home.LoginScreen
@@ -43,10 +44,21 @@ import com.triplane.feature.home.ProfileScreen
 import com.triplane.feature.trip.TripExpandOverlay
 import com.triplane.feature.trip.TripWorkspaceScreen
 import kotlinx.coroutines.launch
+import coil.Coil
+import coil.ImageLoader
+import coil.decode.SvgDecoder
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val imageLoader = ImageLoader.Builder(this)
+            .components {
+                add(SvgDecoder.Factory())
+            }
+            .build()
+        Coil.setImageLoader(imageLoader)
+
         enableEdgeToEdge()
         setContent {
             TripLaneTheme {
@@ -184,6 +196,28 @@ private fun MainAppContent(onSignOut: () -> Unit) {
             )
         }
 
+        // Explore Screen
+        val isExploreActive = currentScreen == "explore"
+        val exploreAlpha = if (isExploreActive) 1f else 0f
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(if (isExploreActive) 1.15f else 0f)
+                .graphicsLayer {
+                    alpha = exploreAlpha
+                }
+        ) {
+            ExploreScreen(
+                viewModel = homeViewModel,
+                onTripClick = { trip ->
+                    // For now, community trips just expand like regular trips
+                    selectedTripId = trip.id
+                    currentScreen = "expanding"
+                }
+            )
+        }
+
         // Profile Screen
         val isProfileActive = currentScreen == "profile"
         val profileAlpha by animateFloatAsState(
@@ -205,7 +239,7 @@ private fun MainAppContent(onSignOut: () -> Unit) {
 
         // Persistent Bottom Nav
         AnimatedVisibility(
-            visible = currentScreen == "home" || currentScreen == "planner" || currentScreen == "profile",
+            visible = currentScreen == "home" || currentScreen == "planner" || currentScreen == "profile" || currentScreen == "explore",
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .zIndex(3f),

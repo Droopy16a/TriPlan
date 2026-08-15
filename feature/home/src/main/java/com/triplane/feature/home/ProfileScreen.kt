@@ -24,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -186,7 +187,8 @@ fun ProfileHeader(name: String, avatarUrl: String? = null) {
         // Profile Photo
         Box(
             modifier = Modifier
-                .size(80.dp)
+                .size(100.dp)
+                .shadow(15.dp, CircleShape, clip = false, spotColor = Color.Black.copy(alpha = 0.28f))
                 .clip(CircleShape)
                 .background(UIBackgroundGray),
             contentAlignment = Alignment.Center
@@ -195,7 +197,8 @@ fun ProfileHeader(name: String, avatarUrl: String? = null) {
                 AsyncImage(
                     model = avatarUrl,
                     contentDescription = "Profile Picture",
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
             } else {
@@ -1035,6 +1038,7 @@ fun EditProfileContent(
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
                     .size(100.dp)
+                    .shadow(16.dp, CircleShape, clip = false, spotColor = Color.Black.copy(alpha = 0.28f))
                     .clip(CircleShape)
                     .clickable(enabled = !isSaving) {
                         avatarPicker.launch(
