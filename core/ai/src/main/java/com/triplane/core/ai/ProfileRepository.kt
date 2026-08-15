@@ -1,10 +1,20 @@
 package com.triplane.core.ai
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import com.triplane.core.auth.SupabaseClient
+import com.triplane.core.auth.AuthRepository
+import com.triplane.core.auth.AuthState
+import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.flow.collectLatest
 
 @Serializable
 data class Notification(
@@ -18,53 +28,108 @@ data class Notification(
 
 @Serializable
 data class UserProfile(
-    val firstName: String = "Gaetan",
-    val lastName: String = "Cozien",
-    val email: String = "gaetancozien07@gmail.com",
-    val birthDate: String = "",
-    val phoneCountryCode: String = "+33",
-    val phoneNumber: String = "7 67 13 79 51",
-    val travelStyle: String = "Balanced",
-    val interests: List<String> = listOf("Culture", "Food", "Nature"),
-    val accommodationPreference: List<String> = emptyList(),
-    val transportationPreference: List<String> = emptyList(),
-    val foodPreferences: List<String> = emptyList(),
-    val notificationsEnabled: Boolean = true,
-    val notifications: List<Notification> = listOf(
-        Notification(
-            id = "1",
-            title = "Trip ready!",
-            message = "Your itinerary for Rome is complete. Check it out now ✨",
-            time = "2m ago",
-            emoji = "🇮🇹"
-        ),
-        Notification(
-            id = "2",
-            title = "New badge earned",
-            message = "You've earned the 'Explorer' badge for your 12th trip!",
-            time = "1h ago",
-            isRead = true,
-            emoji = "🏅"
-        )
-    ),
+    val id: String? = null,
+    @SerialName("first_name") val firstName: String = "",
+    @SerialName("last_name") val lastName: String = "",
+    val email: String = "",
+    @SerialName("birth_date") val birthDate: String = "",
+    @SerialName("phone_country_code") val phoneCountryCode: String = "",
+    @SerialName("phone_number") val phoneNumber: String = "",
+    @SerialName("travel_style") val travelStyle: String = "Balanced",
+    val interests: List<String> = emptyList(),
+    @SerialName("accommodation_preference") val accommodationPreference: List<String> = emptyList(),
+    @SerialName("transportation_preference") val transportationPreference: List<String> = emptyList(),
+    @SerialName("food_preferences") val foodPreferences: List<String> = emptyList(),
+    @SerialName("notifications_enabled") val notificationsEnabled: Boolean = true,
+    val notifications: List<Notification> = emptyList(),
     val language: String = "English",
     val currency: String = "EUR (€)",
     val units: String = "Metric (km)",
     val theme: String = "Light",
-    val avatarUrl: String? = null
+    @SerialName("avatar_url") val avatarUrl: String? = null
 ) {
     val name: String get() = "$firstName $lastName"
     val unreadNotificationCount: Int get() = notifications.count { !it.isRead }
 }
 
 object ProfileRepository {
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val supabase = SupabaseClient.client
+
     private val _profile = MutableStateFlow(UserProfile())
     val profile: StateFlow<UserProfile> = _profile.asStateFlow()
 
-    /**
-     * Called right after a successful Google Sign-In to pre-fill
-     * the user's name, email, and profile picture from their Google account.
-     */
+    init {
+        scope.launch {
+            AuthRepository.authState.collectLatest { state ->
+                if (state is AuthState.Authenticated) {
+                    // 1. First, apply metadata from AuthState (immediate source)
+                    val parts = state.name.trim().split(" ", limit = 2)
+                    _profile.update { current ->
+                        current.copy(
+                            id = state.userId,
+                            firstName = parts.getOrElse(0) { "" },
+                            lastName = parts.getOrElse(1) { "" },
+                            email = state.email,
+                            avatarUrl = state.avatarUrl,
+                            birthDate = state.birthDate,
+                            phoneCountryCode = state.phoneCountryCode,
+                            phoneNumber = state.phoneNumber
+                        )
+                    }
+                    // 2. Then load extended preferences from Database
+                    loadFromDatabase(state.userId)
+                } else {
+                    _profile.value = UserProfile()
+                }
+            }
+        }
+    }
+
+    private suspend fun loadFromDatabase(userId: String) {
+        try {
+            val result = supabase.postgrest["profiles"]
+                .select {
+                    filter {
+                        eq("id", userId)
+                    }
+                }
+                .decodeSingleOrNull<UserProfile>()
+            
+            if (result != null) {
+                // Merge DB results into current state, but keep the core Auth metadata
+                // as the definitive source for name/email/avatar to avoid stale overwrites
+                _profile.update { current ->
+                    result.copy(
+                        id = current.id,
+                        firstName = current.firstName,
+                        lastName = current.lastName,
+                        email = current.email,
+                        avatarUrl = current.avatarUrl,
+                        birthDate = current.birthDate,
+                        phoneCountryCode = current.phoneCountryCode,
+                        phoneNumber = current.phoneNumber
+                    )
+                }
+            } else {
+                // Create initial profile in DB if it doesn't exist
+                saveToDatabase(_profile.value)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun saveToDatabase(profile: UserProfile) {
+        scope.launch {
+            try {
+                supabase.postgrest["profiles"].upsert(profile)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     fun loadFromAuth(
         name: String,
         email: String,
@@ -73,18 +138,7 @@ object ProfileRepository {
         phoneCountryCode: String = "",
         phoneNumber: String = ""
     ) {
-        val parts = name.trim().split(" ", limit = 2)
-        _profile.update {
-            it.copy(
-                firstName = parts.getOrElse(0) { "" },
-                lastName = parts.getOrElse(1) { "" },
-                email = email,
-                birthDate = birthDate.ifBlank { it.birthDate },
-                phoneCountryCode = phoneCountryCode.ifBlank { it.phoneCountryCode },
-                phoneNumber = phoneNumber.ifBlank { it.phoneNumber },
-                avatarUrl = avatarUrl
-            )
-        }
+        // Core info is handled by AuthRepository and authState observer
     }
 
     fun updateAccountInfo(
@@ -95,109 +149,94 @@ object ProfileRepository {
         phoneCountryCode: String,
         phoneNumber: String
     ) {
-        _profile.update {
-            it.copy(
-                firstName = firstName,
-                lastName = lastName,
-                email = email,
-                birthDate = birthDate,
-                phoneCountryCode = phoneCountryCode,
-                phoneNumber = phoneNumber
-            )
-        }
+        // Core info is updated via AuthRepository; this repository will see the changes via authState
     }
 
     fun updateAvatarUrl(avatarUrl: String?) {
-        _profile.update { it.copy(avatarUrl = avatarUrl) }
-    }
-
-    fun updateFirstName(firstName: String) {
-        _profile.update { it.copy(firstName = firstName) }
-    }
-
-    fun updateLastName(lastName: String) {
-        _profile.update { it.copy(lastName = lastName) }
-    }
-
-    fun updateEmail(email: String) {
-        _profile.update { it.copy(email = email) }
-    }
-
-    fun updateBirthDate(date: String) {
-        _profile.update { it.copy(birthDate = date) }
-    }
-
-    fun updatePhone(countryCode: String, number: String) {
-        _profile.update { it.copy(phoneCountryCode = countryCode, phoneNumber = number) }
+        // Core info is updated via AuthRepository
     }
 
     fun updateTravelStyle(style: String) {
-        _profile.update { it.copy(travelStyle = style) }
+        val updated = _profile.value.copy(travelStyle = style)
+        _profile.value = updated
+        saveToDatabase(updated)
     }
 
     fun toggleInterest(interest: String) {
-        _profile.update { current ->
-            val newInterests = if (current.interests.contains(interest)) {
-                current.interests - interest
-            } else {
-                current.interests + interest
-            }
-            current.copy(interests = newInterests)
+        val current = _profile.value
+        val newInterests = if (current.interests.contains(interest)) {
+            current.interests - interest
+        } else {
+            current.interests + interest
         }
+        val updated = current.copy(interests = newInterests)
+        _profile.value = updated
+        saveToDatabase(updated)
     }
 
     fun toggleAccommodation(pref: String) {
-        _profile.update { current ->
-            val newPrefs = if (current.accommodationPreference.contains(pref)) {
-                current.accommodationPreference - pref
-            } else {
-                current.accommodationPreference + pref
-            }
-            current.copy(accommodationPreference = newPrefs)
+        val current = _profile.value
+        val newPrefs = if (current.accommodationPreference.contains(pref)) {
+            current.accommodationPreference - pref
+        } else {
+            current.accommodationPreference + pref
         }
+        val updated = current.copy(accommodationPreference = newPrefs)
+        _profile.value = updated
+        saveToDatabase(updated)
     }
 
     fun toggleTransportation(pref: String) {
-        _profile.update { current ->
-            val newPrefs = if (current.transportationPreference.contains(pref)) {
-                current.transportationPreference - pref
-            } else {
-                current.transportationPreference + pref
-            }
-            current.copy(transportationPreference = newPrefs)
+        val current = _profile.value
+        val newPrefs = if (current.transportationPreference.contains(pref)) {
+            current.transportationPreference - pref
+        } else {
+            current.transportationPreference + pref
         }
+        val updated = current.copy(transportationPreference = newPrefs)
+        _profile.value = updated
+        saveToDatabase(updated)
     }
 
     fun toggleFoodPreference(pref: String) {
-        _profile.update { current ->
-            val newPrefs = if (current.foodPreferences.contains(pref)) {
-                current.foodPreferences - pref
-            } else {
-                current.foodPreferences + pref
-            }
-            current.copy(foodPreferences = newPrefs)
+        val current = _profile.value
+        val newPrefs = if (current.foodPreferences.contains(pref)) {
+            current.foodPreferences - pref
+        } else {
+            current.foodPreferences + pref
         }
+        val updated = current.copy(foodPreferences = newPrefs)
+        _profile.value = updated
+        saveToDatabase(updated)
+    }
+
+    fun updateLanguage(language: String) {
+        val updated = _profile.value.copy(language = language)
+        _profile.value = updated
+        saveToDatabase(updated)
+    }
+
+    fun updateCurrency(currency: String) {
+        val updated = _profile.value.copy(currency = currency)
+        _profile.value = updated
+        saveToDatabase(updated)
+    }
+
+    fun updateUnits(units: String) {
+        val updated = _profile.value.copy(units = units)
+        _profile.value = updated
+        saveToDatabase(updated)
+    }
+
+    fun updateTheme(theme: String) {
+        val updated = _profile.value.copy(theme = theme)
+        _profile.value = updated
+        saveToDatabase(updated)
     }
 
     fun markNotificationsAsRead() {
         _profile.update { current ->
             current.copy(notifications = current.notifications.map { it.copy(isRead = true) })
         }
-    }
-
-    fun updateLanguage(language: String) {
-        _profile.update { it.copy(language = language) }
-    }
-
-    fun updateCurrency(currency: String) {
-        _profile.update { it.copy(currency = currency) }
-    }
-
-    fun updateUnits(units: String) {
-        _profile.update { it.copy(units = units) }
-    }
-
-    fun updateTheme(theme: String) {
-        _profile.update { it.copy(theme = theme) }
     }
 }

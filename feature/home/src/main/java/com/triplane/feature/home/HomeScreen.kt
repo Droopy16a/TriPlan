@@ -168,6 +168,7 @@ fun HomeScreen(
             expansionAnimatable.animateTo(1f, tween(300))
         } else {
             expansionAnimatable.animateTo(0f, tween(300))
+            isScrollingDown = false
         }
     }
 
@@ -255,7 +256,8 @@ fun HomeScreen(
             )
         ) {
             item {
-                val pageCount = savedTrips.size
+                val isEmpty = savedTrips.isEmpty()
+                val pageCount = if (isEmpty) 1 else savedTrips.size
                 val pagerState = rememberPagerState(pageCount = { pageCount })
                 val context = LocalContext.current
                 var hasVibratedOnStart by remember { mutableStateOf(false) }
@@ -298,8 +300,8 @@ fun HomeScreen(
 
                         var cardBounds by remember { mutableStateOf(Rect.Zero) }
                         
-                        // Pages 0+ = All trips in repository (includes default Kyoto)
-                        val savedTrip = savedTrips.getOrNull(page)
+                        // Pages 0+ = All trips in repository
+                        val savedTrip = if (isEmpty) null else savedTrips.getOrNull(page)
                         
                         HeroTripCard(
                             savedTrip = savedTrip,
@@ -324,22 +326,24 @@ fun HomeScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    if (!isEmpty) {
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        repeat(pageCount) { index ->
-                            val isSelected = pagerState.currentPage == index
-                            Box(
-                                modifier = Modifier
-                                    .padding(horizontal = 4.dp)
-                                    .size(if (isSelected) 8.dp else 6.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isSelected) DeepGraphite else Color.Gray.copy(alpha = 0.4f))
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            repeat(pageCount) { index ->
+                                val isSelected = pagerState.currentPage == index
+                                Box(
+                                    modifier = Modifier
+                                        .padding(horizontal = 4.dp)
+                                        .size(if (isSelected) 8.dp else 6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) DeepGraphite else Color.Gray.copy(alpha = 0.4f))
+                                )
+                            }
                         }
                     }
                 }
@@ -745,6 +749,13 @@ fun SearchBar(
                         unfocusedLabelColor  = Color(0xFF888888)
                     )
 
+                    val scrollState = rememberScrollState()
+                    LaunchedEffect(isExpanded) {
+                        if (isExpanded) {
+                            scrollState.scrollTo(0)
+                        }
+                    }
+
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -781,7 +792,7 @@ fun SearchBar(
                         Column(
                             modifier = Modifier
                                 .weight(1f)
-                                .verticalScroll(rememberScrollState()),
+                                .verticalScroll(scrollState),
                             verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
                             Row(
@@ -1275,18 +1286,56 @@ fun HeroTripCard(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    if (savedTrip == null) {
+        Surface(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(440.dp)
+                .border(
+                    width = 1.dp,
+                    color = Color.Black.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(28.dp)
+                ),
+            shape = RoundedCornerShape(28.dp),
+            color = UIBackgroundGray,
+            shadowElevation = 0.dp
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = DeepGraphite.copy(alpha = 0.1f)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "Scroll up to start a new adventure",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = DeepGraphite.copy(alpha = 0.4f),
+                    fontWeight = FontWeight.Medium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 40.dp)
+                )
+            }
+        }
+        return
+    }
+
     // Dynamic budget calculation
-    val totalBudget = parseCurrency(savedTrip?.budget).let {
+    val totalBudget = parseCurrency(savedTrip.budget).let {
         if (it == 0.0) 2500.0 else it // Fallback for static card
     }
     val spentBudget = remember(savedTrip) {
-        val itineraryCost = savedTrip?.itinerary?.days?.flatMap { it.steps }?.sumOf {
+        val itineraryCost = savedTrip.itinerary?.days?.flatMap { it.steps }?.sumOf {
             it.estimatedCost ?: 0.0
         } ?: 0.0
-        val manualExpenses = savedTrip?.expenses?.sumOf { it.amount } ?: 0.0
+        val manualExpenses = savedTrip.expenses.sumOf { it.amount }
 
-        val total = itineraryCost + manualExpenses
-        if (total == 0.0 && savedTrip == null) 1200.0 else total
+        itineraryCost + manualExpenses
     }
 
     val remainingBudget = (totalBudget - spentBudget).coerceAtLeast(0.0)
@@ -1299,18 +1348,18 @@ fun HeroTripCard(
         label = "budgetProgress"
     )
 
-    // Display values — fall back to static Kyoto when no saved trip
-    val displayEmoji  = savedTrip?.emoji ?: "⛩️"
-    val cityName = (savedTrip?.destination ?: "Kyoto, Japan").substringBefore(",").trim()
-    val displayTitle = if (savedTrip?.title?.isNotBlank() == true) savedTrip.title else {
-        val year = savedTrip?.itinerary?.days?.firstOrNull()?.date?.substringBefore("-") ?: "2026"
+    // Display values
+    val displayEmoji  = savedTrip.emoji
+    val cityName = savedTrip.destination.substringBefore(",").trim()
+    val displayTitle = if (savedTrip.title.isNotBlank()) savedTrip.title else {
+        val year = savedTrip.itinerary?.days?.firstOrNull()?.date?.substringBefore("-") ?: "2026"
         "$cityName $year"
     }
-    val displayDates  = savedTrip?.dates ?: "Oct 12 - Oct 24"
-    val isAiGenerated = savedTrip != null
+    val displayDates  = savedTrip.dates
+    val isAiGenerated = true
 
     val daysLeft = remember(savedTrip) {
-        val startDate = savedTrip?.itinerary?.days?.firstOrNull()?.date?.let {
+        val startDate = savedTrip.itinerary?.days?.firstOrNull()?.date?.let {
             try { LocalDate.parse(it) } catch (e: Exception) { null }
         } ?: LocalDate.of(2026, 10, 12)
         java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), startDate)

@@ -36,10 +36,15 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:auth"))
     implementation(project(":core:location"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.google.generativeai)
     implementation(libs.kotlinx.serialization.json)
+    
+    implementation(platform(libs.supabase.bom))
+    implementation(libs.supabase.postgrest)
+    implementation(libs.supabase.auth)
     
     // HTTP Client for API calls
     implementation(libs.ktor.client.core)

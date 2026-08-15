@@ -12,9 +12,14 @@ import io.github.jan.supabase.gotrue.providers.Google
 import io.github.jan.supabase.gotrue.providers.builtin.Email
 import io.github.jan.supabase.gotrue.providers.builtin.IDToken
 import io.github.jan.supabase.gotrue.SessionStatus
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -32,12 +37,13 @@ object AuthRepository {
     private const val AVATAR_BUCKET = "avatars"
 
     private val supabase = SupabaseClient.client
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     /**
-     * Emits the current authentication state as a [AuthState] Flow.
+     * Emits the current authentication state as a [AuthState] StateFlow.
      * Stays up to date as the session changes (sign-in, token refresh, sign-out).
      */
-    val authState: Flow<AuthState> = supabase.auth.sessionStatus.map { status ->
+    val authState: StateFlow<AuthState> = supabase.auth.sessionStatus.map { status ->
         when (status) {
             is SessionStatus.Authenticated -> {
                 val user = status.session.user
@@ -63,7 +69,7 @@ object AuthRepository {
             SessionStatus.LoadingFromStorage -> AuthState.Loading
             SessionStatus.NetworkError -> AuthState.Unauthenticated
         }
-    }
+    }.stateIn(scope, SharingStarted.Eagerly, AuthState.Loading)
 
     /**
      * Launches the Credential Manager Google Sign-In picker, then authenticates

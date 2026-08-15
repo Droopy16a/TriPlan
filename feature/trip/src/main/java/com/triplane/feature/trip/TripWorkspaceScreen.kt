@@ -708,7 +708,7 @@ fun TripSheetContent(
             )
             else -> {
                 MembersView(
-                    members = currentTrip?.memberNames?.takeIf { it.isNotEmpty() } 
+                    members = currentTrip?.memberNames?.takeIf { it.isNotEmpty() }
                         ?: TripRepository.getDefaultMembers(currentTrip?.travelers),
                     expenses = currentTrip?.expenses ?: emptyList()
                 )
@@ -745,7 +745,7 @@ fun TripSheetContent(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
+                TextButton(onClick = { showDeleteDialog = false }, colors = ButtonDefaults.textButtonColors(contentColor = Color.DarkGray)) {
                     Text("Cancel")
                 }
             }
