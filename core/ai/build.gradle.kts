@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.triplane.core.ai"
+    namespace = "com.ramble.core.ai"
     compileSdk = 37
 
     defaultConfig {

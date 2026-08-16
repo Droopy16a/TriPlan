@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.triplane.feature.expenses"
+    namespace = "com.ramble.feature.expenses"
     compileSdk = 37
 
     defaultConfig {

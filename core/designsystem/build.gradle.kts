@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.triplane.core.designsystem"
+    namespace = "com.ramble.core.designsystem"
     compileSdk = 37
 
     defaultConfig {

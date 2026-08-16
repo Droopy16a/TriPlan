@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.triplane.feature.trip"
+    namespace = "com.ramble.feature.trip"
     compileSdk = 37
 
     defaultConfig {

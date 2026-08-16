@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.triplane.feature.home"
+    namespace = "com.ramble.feature.home"
     compileSdk = 37
 
     defaultConfig {

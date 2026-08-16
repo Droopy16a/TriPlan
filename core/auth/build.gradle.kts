@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.triplane.core.auth"
+    namespace = "com.ramble.core.auth"
     compileSdk = 37
 
     defaultConfig {

@@ -22,7 +22,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "triplane"
+rootProject.name = "Ramble"
 include(":app")
 include(":core:designsystem")
 include(":core:ai")

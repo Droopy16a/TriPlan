@@ -17,12 +17,12 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Triplane">
+        android:theme="@style/Theme.Ramble">
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.Triplane"
+            android:theme="@style/Theme.Ramble"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -35,7 +35,7 @@
             android:name=".PlanningNotificationReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="com.triplane.ACTION_CANCEL_PLANNING" />
+                <action android:name="com.ramble.ACTION_CANCEL_PLANNING" />
             </intent-filter>
         </receiver>
     </application>

@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.triplane"
+    namespace = "com.example.ramble"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.example.triplane"
+        applicationId = "com.example.ramble"
         minSdk = 26
         targetSdk = 37
         versionCode = 1
