@@ -1,6 +1,10 @@
 package com.example.ramble
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -8,8 +12,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -17,22 +19,33 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ramble.core.auth.AuthRepository
 import com.ramble.core.auth.AuthState
 import com.ramble.core.ai.ProfileRepository
+import com.ramble.core.ai.TripRepository
 import com.ramble.core.designsystem.theme.RambleTheme
 import com.ramble.feature.home.BottomNavPill
 import com.ramble.feature.home.ExploreScreen
@@ -49,8 +62,11 @@ import coil.ImageLoader
 import coil.decode.SvgDecoder
 
 class MainActivity : ComponentActivity() {
+    private val deepLinkTripId = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleIntent(intent)
 
         val imageLoader = ImageLoader.Builder(this)
             .components {
@@ -61,7 +77,7 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            RambleTheme {
+             RambleTheme {
                 // Observe auth state from Supabase session
                 val authState by AuthRepository.authState.collectAsState(initial = AuthState.Loading)
                 val context = LocalContext.current
@@ -84,7 +100,7 @@ class MainActivity : ComponentActivity() {
 
                 when (authState) {
                     is AuthState.Loading -> {
-                        // Splash / loading — show nothing (system splash screen handles this)
+                        // Splash / loading
                         Box(modifier = Modifier.fillMaxSize())
                     }
 
@@ -96,26 +112,75 @@ class MainActivity : ComponentActivity() {
                         MainAppContent(
                             onSignOut = {
                                 scope.launch { AuthRepository.signOut(context) }
-                            }
+                            },
+                            initialDeepLinkTripId = deepLinkTripId.value,
+                            onDeepLinkHandled = { deepLinkTripId.value = null }
                         )
                     }
                 }
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        Log.d("RAMBLE_DEEPLINK", "handleIntent: action=${intent?.action}, data=${intent?.data}")
+        if (intent?.action == Intent.ACTION_VIEW) {
+            val data = intent.data
+            // Support both www.rambletrip.com and rambletrip.com
+            if ((data?.host == "www.rambletrip.com" || data?.host == "rambletrip.com") && 
+                data.path?.startsWith("/join") == true) {
+                
+                // Robust path segment extraction
+                val segments = data.pathSegments
+                val tripId = segments.lastOrNull { it != "join" && it.isNotBlank() }
+                
+                Log.d("RAMBLE_DEEPLINK", "Extracted trip ID: $tripId from path: ${data.path}")
+                deepLinkTripId.value = tripId
+            }
+        }
+    }
 }
 
 @Composable
-private fun MainAppContent(onSignOut: () -> Unit) {
+private fun MainAppContent(
+    onSignOut: () -> Unit,
+    initialDeepLinkTripId: String? = null,
+    onDeepLinkHandled: () -> Unit = {}
+) {
     val homeViewModel: HomeViewModel = viewModel()
     var currentScreen by remember { mutableStateOf("home") }
     var previousScreen by remember { mutableStateOf("home") }
     var cardBounds by remember { mutableStateOf(Rect.Zero) }
     var selectedTripId by remember { mutableStateOf<String?>(null) }
+    var isJoining by remember { mutableStateOf(false) }
 
-    LaunchedEffect(currentScreen) {
-        kotlinx.coroutines.delay(100)
-        previousScreen = currentScreen
+    // Handle deep links
+    val context = LocalContext.current
+    LaunchedEffect(initialDeepLinkTripId) {
+        if (initialDeepLinkTripId != null) {
+            Log.d("RAMBLE_DEEPLINK", "Started joining flow for ID: $initialDeepLinkTripId")
+            isJoining = true
+            try {
+                val joinedTripId = TripRepository.joinTripById(initialDeepLinkTripId)
+                if (joinedTripId != null) {
+                    selectedTripId = joinedTripId
+                    currentScreen = "trip"
+                } else {
+                    Toast.makeText(context, "Error joining trip", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e("RAMBLE_DEEPLINK", "Error joining trip", e)
+                Toast.makeText(context, "Failed to join trip", Toast.LENGTH_SHORT).show()
+            } finally {
+                isJoining = false
+                onDeepLinkHandled()
+            }
+        }
     }
 
     // Intercept back button during expanding animation
@@ -129,7 +194,7 @@ private fun MainAppContent(onSignOut: () -> Unit) {
     val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Planner Screen: Kept in cache for smoothness (not disposed)
+        // Planner Screen: Kept in cache for smoothness
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -162,7 +227,7 @@ private fun MainAppContent(onSignOut: () -> Unit) {
             )
         }
 
-        // Middle layer: HomeScreen (Cached to keep minimaps warm)
+        // Middle layer: HomeScreen
         val isHomeActive = currentScreen == "home" || currentScreen == "expanding"
         val homeAlpha by animateFloatAsState(
             targetValue = if (isHomeActive) 1f else 0f,
@@ -211,7 +276,6 @@ private fun MainAppContent(onSignOut: () -> Unit) {
             ExploreScreen(
                 viewModel = homeViewModel,
                 onTripClick = { trip ->
-                    // For now, community trips just expand like regular trips
                     selectedTripId = trip.id
                     currentScreen = "expanding"
                 }
@@ -260,7 +324,7 @@ private fun MainAppContent(onSignOut: () -> Unit) {
             )
         }
 
-        // Top layer: overlay expands from card bounds, on top of HomeScreen
+        // Top layer: overlay expands from card bounds
         if (currentScreen == "expanding") {
             Box(modifier = Modifier.zIndex(2f)) {
                 TripExpandOverlay(
@@ -270,6 +334,31 @@ private fun MainAppContent(onSignOut: () -> Unit) {
                     screenHeightPx = screenHeightPx,
                     onComplete = { currentScreen = "trip" }
                 )
+            }
+        }
+
+        // Global Joining Overlay
+        if (isJoining) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .zIndex(10f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Joining trip...",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

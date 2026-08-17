@@ -970,9 +970,9 @@ fun EditProfileContent(
     var firstName by remember { mutableStateOf(profile.firstName) }
     var lastName by remember { mutableStateOf(profile.lastName) }
     var email by remember { mutableStateOf(profile.email) }
-    var birthDate by remember { mutableStateOf(profile.birthDate) }
-    var phoneCountryCode by remember { mutableStateOf(profile.phoneCountryCode) }
-    var phoneNumber by remember { mutableStateOf(profile.phoneNumber) }
+    var birthDate by remember { mutableStateOf(profile.birthDate ?: "") }
+    var phoneCountryCode by remember { mutableStateOf(profile.phoneCountryCode ?: "") }
+    var phoneNumber by remember { mutableStateOf(profile.phoneNumber ?: "") }
     var avatarUrl by remember(profile.avatarUrl) { mutableStateOf(profile.avatarUrl) }
     var selectedAvatarUri by remember { mutableStateOf<Uri?>(null) }
 

@@ -2,7 +2,6 @@ package com.ramble.feature.home
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,7 +18,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -77,7 +75,7 @@ fun LoginScreen() {
             verticalArrangement = Arrangement.Center
         ) {
 
-            // App Logo / Icon placeholder
+            // App Logo
             Box(
                 modifier = Modifier
                     .size(96.dp)
@@ -85,10 +83,11 @@ fun LoginScreen() {
                     .background(DeepGraphite),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "✈",
-                    fontSize = 44.sp,
-                    color = Color.White
+                Icon(
+                    painter = painterResource(id = com.ramble.core.designsystem.R.drawable.ic_logo),
+                    contentDescription = "Ramble Logo",
+                    modifier = Modifier.size(64.dp),
+                    tint = Color.White
                 )
             }
 

@@ -19,6 +19,7 @@ android {
 dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":core:ai"))
+    implementation(project(":core:auth"))
     implementation(project(":feature:expenses"))
     
     implementation(libs.androidx.core.ktx)

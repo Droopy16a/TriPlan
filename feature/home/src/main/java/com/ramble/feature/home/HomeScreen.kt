@@ -1333,7 +1333,7 @@ fun HeroTripCard(
         val itineraryCost = savedTrip.itinerary?.days?.flatMap { it.steps }?.sumOf {
             it.estimatedCost ?: 0.0
         } ?: 0.0
-        val manualExpenses = savedTrip.expenses.sumOf { it.amount }
+        val manualExpenses = savedTrip.expenses?.sumOf { it.amount } ?: 0.0
 
         itineraryCost + manualExpenses
     }
@@ -1537,7 +1537,7 @@ fun HeroTripCard(
                             .background(DeepGraphite),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(displayEmoji, style = MaterialTheme.typography.titleLarge)
+                        Text(displayEmoji ?: "✈️", style = MaterialTheme.typography.titleLarge)
                     }
                     
                     Spacer(modifier = Modifier.width(20.dp))
@@ -1550,7 +1550,7 @@ fun HeroTripCard(
                             fontSize = 22.sp
                         )
                         Text(
-                            displayDates, 
+                            displayDates ?: "", 
                             style = MaterialTheme.typography.bodyLarge, 
                             color = Color.Gray
                         )

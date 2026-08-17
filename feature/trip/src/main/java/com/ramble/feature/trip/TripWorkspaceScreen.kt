@@ -132,6 +132,8 @@ import com.ramble.core.ai.TripRepository
 import com.ramble.core.ai.TripStep
 import com.ramble.core.ai.AiPlannerService
 import com.ramble.core.ai.providers.GeocodingProvider
+import com.ramble.core.auth.AuthRepository
+import com.ramble.core.auth.AuthState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -171,9 +173,12 @@ fun TripWorkspaceScreen(
     }
 
     val allTrips by TripRepository.trips.collectAsState()
+    val authState by AuthRepository.authState.collectAsState()
+    val currentUserId = (authState as? AuthState.Authenticated)?.userId
     val currentTrip = remember(tripId, allTrips) { 
         allTrips.find { it.id == tripId } ?: CommunityTripRepository.searchTrips("").find { it.id == tripId }
     }
+    val isOwner = currentTrip?.userId == currentUserId
     val tripName = currentTrip?.let { trip ->
         if (trip.title.isNotBlank()) trip.title
         else {
@@ -301,6 +306,7 @@ fun TripWorkspaceScreen(
         sheetContent = {
             TripSheetContent(
                 tripId = tripId,
+                isOwner = isOwner,
                 pagerState = pagerState,
                 geocodingProvider = geocodingProvider,
                 onTripDeleted = onBackClick,
@@ -460,12 +466,14 @@ fun TripWorkspaceScreen(
 @Composable
 fun TripSheetContent(
     tripId: String?,
+    isOwner: Boolean = false,
     pagerState: PagerState,
     geocodingProvider: GeocodingProvider,
     onTripDeleted: () -> Unit = {},
     onLocationSelected: (LatLng) -> Unit
 ) {
     val allTrips by TripRepository.trips.collectAsState()
+    val tripMemberProfiles by TripRepository.tripMemberProfiles.collectAsState()
     val currentTrip = remember(tripId, allTrips) { allTrips.find { it.id == tripId } }
     val tripName = currentTrip?.let { trip ->
         if (trip.title.isNotBlank()) trip.title
@@ -486,6 +494,13 @@ fun TripSheetContent(
 
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showLeaveDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(tripId, selectedTabIndex) {
+        if (tripId != null && selectedTabIndex == 2) {
+            TripRepository.refreshTrips()
+        }
+    }
 
     val totalBudget = remember(currentTrip?.budget) {
         parseCurrency(currentTrip?.budget).let { if (it == 0.0) 1500.0 else it }
@@ -494,6 +509,12 @@ fun TripSheetContent(
         val itineraryCost = aiItinerary?.days?.flatMap { it.steps }?.sumOf { it.estimatedCost ?: 0.0 } ?: 0.0
         val manualExpenses = currentTrip?.expenses?.sumOf { it.amount } ?: 0.0
         itineraryCost + manualExpenses
+    }
+    val tripMembers = remember(currentTrip?.id, currentTrip?.memberNames, currentTrip?.travelers, tripMemberProfiles) {
+        TripRepository.membersForTrip(currentTrip)
+    }
+    val memberAvatarUrls = remember(currentTrip?.id, currentTrip?.memberAvatarUrls, currentTrip?.memberNames, currentTrip?.travelers, tripMemberProfiles) {
+        TripRepository.memberAvatarUrlsForTrip(currentTrip)
     }
 
     val stopFlingCollapseConnection = remember {
@@ -566,7 +587,8 @@ fun TripSheetContent(
                             showMenu = false
                             val shareIntent = Intent().apply {
                                 action = Intent.ACTION_SEND
-                                putExtra(Intent.EXTRA_TEXT, "Check out my trip to ${currentTrip?.destination}! ${currentTrip?.title} (${currentTrip?.dates})")
+                                val inviteUrl = "https://www.rambletrip.com/join/${currentTrip?.id}"
+                                putExtra(Intent.EXTRA_TEXT, "Join my trip to ${currentTrip?.destination} on Ramble! $inviteUrl")
                                 type = "text/plain"
                             }
                             context.startActivity(Intent.createChooser(shareIntent, null))
@@ -580,37 +602,40 @@ fun TripSheetContent(
                             )
                         }
                     )
-//                    DropdownMenuItem(
-//                        text = { Text("Duplicate Trip", style = MaterialTheme.typography.bodyMedium) },
-//                        onClick = {
-//                            showMenu = false
-//                            // Add duplicate action here
-//                        },
-//                        leadingIcon = {
-//                            Icon(
-//                                Icons.Default.ContentCopy,
-//                                contentDescription = null,
-//                                modifier = Modifier.size(18.dp),
-//                                tint = DeepGraphite
-//                            )
-//                        }
-//                    )
                     HorizontalDivider(color = UIBackgroundGray)
-                    DropdownMenuItem(
-                        text = { Text("Delete Trip", style = MaterialTheme.typography.bodyMedium, color = Color.Red) },
-                        onClick = {
-                            showMenu = false
-                            showDeleteDialog = true
-                        },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = Color.Red
-                            )
-                        }
-                    )
+                    if (isOwner) {
+                        DropdownMenuItem(
+                            text = { Text("Delete Trip", style = MaterialTheme.typography.bodyMedium, color = Color.Red) },
+                            onClick = {
+                                showMenu = false
+                                showDeleteDialog = true
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = Color.Red
+                                )
+                            }
+                        )
+                    } else {
+                        DropdownMenuItem(
+                            text = { Text("Leave Trip", style = MaterialTheme.typography.bodyMedium, color = Color.Red) },
+                            onClick = {
+                                showMenu = false
+                                showLeaveDialog = true
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = Color.Red
+                                )
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -688,8 +713,7 @@ fun TripSheetContent(
                 totalBudget = totalBudget,
                 spentBudget = spentBudget,
                 expenses = currentTrip?.expenses ?: emptyList(),
-                memberNames = currentTrip?.memberNames?.takeIf { it.isNotEmpty() } 
-                    ?: TripRepository.getDefaultMembers(currentTrip?.travelers),
+                memberNames = tripMembers,
                 prefilledTitle = prefilledTitle,
                 prefilledAmount = prefilledAmount,
                 onPrefillHandled = {
@@ -708,9 +732,9 @@ fun TripSheetContent(
             )
             else -> {
                 MembersView(
-                    members = currentTrip?.memberNames?.takeIf { it.isNotEmpty() }
-                        ?: TripRepository.getDefaultMembers(currentTrip?.travelers),
-                    expenses = currentTrip?.expenses ?: emptyList()
+                    members = tripMembers,
+                    expenses = currentTrip?.expenses ?: emptyList(),
+                    memberAvatarUrls = memberAvatarUrls
                 )
             }
         }
@@ -751,6 +775,31 @@ fun TripSheetContent(
             }
         )
     }
+
+    if (showLeaveDialog && tripId != null) {
+        AlertDialog(
+            onDismissRequest = { showLeaveDialog = false },
+            title = { Text("Leave Trip") },
+            text = { Text("Are you sure you want to leave this trip?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        TripRepository.leaveTrip(tripId)
+                        showLeaveDialog = false
+                        onTripDeleted()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
+                ) {
+                    Text("Leave")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLeaveDialog = false }, colors = ButtonDefaults.textButtonColors(contentColor = Color.DarkGray)) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -760,10 +809,10 @@ fun EditTripDialog(
     onConfirm: (SavedTrip) -> Unit
 ) {
     var title by remember { mutableStateOf(trip.title) }
-    var emoji by remember { mutableStateOf(trip.emoji) }
-    var travelers by remember { mutableStateOf(trip.travelers) }
-    var budget by remember { mutableStateOf(trip.budget) }
-    var dates by remember { mutableStateOf(trip.dates) }
+    var emoji by remember { mutableStateOf(trip.emoji ?: "✈️") }
+    var travelers by remember { mutableStateOf(trip.travelers ?: "") }
+    var budget by remember { mutableStateOf(trip.budget ?: "") }
+    var dates by remember { mutableStateOf(trip.dates ?: "") }
 
     var showDatePicker by remember { mutableStateOf(false) }
     val dateRangePickerState = rememberDateRangePickerState()
@@ -901,13 +950,13 @@ fun EditTripDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val oldTravelersCount = trip.travelers.filter { it.isDigit() }.toDoubleOrNull() ?: 1.0
+                    val oldTravelersCount = trip.travelers?.filter { it.isDigit() }?.toDoubleOrNull() ?: 1.0
                     val newTravelersCount = travelers.filter { it.isDigit() }.toDoubleOrNull() ?: 1.0
 
                     val updatedMemberNames = if (travelers != trip.travelers) {
-                        TripRepository.getDefaultMembers(travelers)
+                        TripRepository.reconcileMembersForTravelers(trip.memberNames, travelers)
                     } else {
-                        trip.memberNames
+                        TripRepository.membersForTrip(trip)
                     }
 
                     val itinerary = trip.itinerary

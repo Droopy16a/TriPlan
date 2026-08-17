@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.ramble.core.ai.Expense
-import com.ramble.core.ai.ProfileRepository
 import com.ramble.core.designsystem.theme.BrandLightGreen
 import com.ramble.core.designsystem.theme.DeepGraphite
 import com.ramble.core.designsystem.theme.UIBackgroundGray
@@ -103,7 +102,8 @@ fun calculateSettlements(balances: List<MemberBalance>): List<Debt> {
 @Composable
 fun MembersView(
     members: List<String>,
-    expenses: List<Expense>
+    expenses: List<Expense>,
+    memberAvatarUrls: Map<String, String> = emptyMap()
 ) {
     val balances = remember(members, expenses) { calculateBalances(members, expenses) }
     val mainMember = remember(members) { members.firstOrNull() ?: "Me" }
@@ -130,7 +130,11 @@ fun MembersView(
         }
 
         items(balances.sortedBy { it.name != mainMember }) { balance ->
-            MemberBalanceItem(balance = balance, isMainMember = balance.name == mainMember)
+            MemberBalanceItem(
+                balance = balance,
+                isMainMember = balance.name == mainMember,
+                avatarUrl = memberAvatarUrls[balance.name]
+            )
         }
 
         if (settlements.isNotEmpty()) {
@@ -204,9 +208,11 @@ fun SummaryCard(myBalance: Double) {
 }
 
 @Composable
-fun MemberBalanceItem(balance: MemberBalance, isMainMember: Boolean) {
-    val profile by ProfileRepository.profile.collectAsState()
-    
+fun MemberBalanceItem(
+    balance: MemberBalance,
+    isMainMember: Boolean,
+    avatarUrl: String? = null
+) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -227,9 +233,9 @@ fun MemberBalanceItem(balance: MemberBalance, isMainMember: Boolean) {
                         .background(if (isMainMember) DeepGraphite else UIBackgroundGray),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isMainMember && profile.avatarUrl != null) {
+                    if (!avatarUrl.isNullOrBlank()) {
                         AsyncImage(
-                            model = profile.avatarUrl,
+                            model = avatarUrl,
                             contentDescription = "Profile Picture",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop
