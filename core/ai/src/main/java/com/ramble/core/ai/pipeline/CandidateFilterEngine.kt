@@ -5,10 +5,10 @@ import kotlin.math.abs
 
 class CandidateFilterEngine {
 
-    fun filterAndRank(rawPois: List<POI>, limit: Int = 20): List<POI> {
+    fun filterAndRank(rawPois: List<POI>, limit: Int = 20, adhocPreferences: String? = null): List<POI> {
         val profile = com.ramble.core.ai.ProfileRepository.profile.value
-        val interests = profile.interests.map { it.lowercase() }
-        val foodPrefs = profile.foodPreferences.map { it.lowercase() }
+        val interests = (profile.interests + (adhocPreferences?.let { parseInterests(it) } ?: emptyList())).map { it.lowercase() }.distinct()
+        val foodPrefs = (profile.foodPreferences + (adhocPreferences?.let { parseFoodPrefs(it) } ?: emptyList())).map { it.lowercase() }.distinct()
         
         // 1. Deduplicate (by name and close proximity)
         val deduplicated = deduplicate(rawPois)
@@ -30,13 +30,13 @@ class CandidateFilterEngine {
             
             val matchesInterest = interests.any { interest ->
                 val synonyms = when(interest) {
-                    "nightlife" -> listOf("bar", "pub", "nightclub", "club", "casino", "lounge")
-                    "sports" -> listOf("stadium", "sports", "pitch", "golf", "arena", "fitness")
-                    "nature" -> listOf("park", "reserve", "beach", "forest", "water", "trail", "garden")
-                    "culture" -> listOf("museum", "gallery", "historic", "attraction", "monument", "artwork", "castle", "temple", "church")
-                    "shopping" -> listOf("shop", "mall", "boutique", "market", "supermarket", "clothes")
-                    "food" -> listOf("restaurant", "cafe", "bakery", "fast_food", "deli")
-                    else -> emptyList()
+                    "nightlife" -> listOf("bar", "pub", "nightclub", "club", "casino", "lounge", "cabaret", "dance")
+                    "sports" -> listOf("stadium", "sports", "pitch", "golf", "arena", "fitness", "gym")
+                    "nature" -> listOf("park", "reserve", "beach", "forest", "water", "trail", "garden", "mountain", "hiking")
+                    "culture" -> listOf("museum", "gallery", "historic", "attraction", "monument", "artwork", "castle", "temple", "church", "cathedral", "theatre")
+                    "shopping" -> listOf("shop", "mall", "boutique", "market", "supermarket", "clothes", "jewelry")
+                    "food" -> listOf("restaurant", "cafe", "bakery", "fast_food", "deli", "bistro", "brasserie")
+                    else -> listOf(interest)
                 }
                 
                 categoryLower.contains(interest) || nameLower.contains(interest) || 
@@ -45,6 +45,16 @@ class CandidateFilterEngine {
             
             if (matchesInterest) {
                 score += 5.0
+            }
+
+            // Direct check in adhocPreferences for any specific nightlife or other keywords if not captured by interests
+            if (adhocPreferences != null) {
+                val adhocLower = adhocPreferences.lowercase()
+                if (adhocLower.contains("nightlife") || adhocLower.contains("night club") || adhocLower.contains("party")) {
+                    if (categoryLower.contains("bar") || categoryLower.contains("pub") || categoryLower.contains("nightclub")) {
+                        score += 3.0
+                    }
+                }
             }
             
             // Boost based on user profile food preferences
@@ -72,9 +82,24 @@ class CandidateFilterEngine {
         return result.take(limit).sortedByDescending { it.relevanceScore }
     }
 
-    fun filterAndRankAccommodation(rawAccommodation: List<POI>, limit: Int = 10): List<POI> {
+    private fun parseInterests(prefs: String): List<String> {
+        // Simple parsing of "Interests: Nightlife, Culture"
+        val interestLine = prefs.lines().find { it.contains("Interests:", ignoreCase = true) } 
+            ?: prefs.split(";").find { it.contains("Interests:", ignoreCase = true) }
+        
+        return interestLine?.substringAfter("Interests:")?.split(",")?.map { it.trim().lowercase() } ?: emptyList()
+    }
+
+    private fun parseFoodPrefs(prefs: String): List<String> {
+        val foodLine = prefs.lines().find { it.contains("Food:", ignoreCase = true) }
+            ?: prefs.split(";").find { it.contains("Food:", ignoreCase = true) }
+            
+        return foodLine?.substringAfter("Food:")?.split(",")?.map { it.trim().lowercase() } ?: emptyList()
+    }
+
+    fun filterAndRankAccommodation(rawAccommodation: List<POI>, limit: Int = 10, adhocPreferences: String? = null): List<POI> {
         val profile = com.ramble.core.ai.ProfileRepository.profile.value
-        val accPrefs = profile.accommodationPreference.map { it.lowercase() }
+        val accPrefs = (profile.accommodationPreference + (adhocPreferences?.let { parseAccPrefs(it) } ?: emptyList())).map { it.lowercase() }.distinct()
         
         val deduplicated = deduplicate(rawAccommodation)
 
@@ -104,6 +129,13 @@ class CandidateFilterEngine {
         }.sortedByDescending { it.relevanceScore }
 
         return ranked.take(limit)
+    }
+
+    private fun parseAccPrefs(prefs: String): List<String> {
+        val accLine = prefs.lines().find { it.contains("Accommodation:", ignoreCase = true) }
+            ?: prefs.split(";").find { it.contains("Accommodation:", ignoreCase = true) }
+            
+        return accLine?.substringAfter("Accommodation:")?.split(",")?.map { it.trim().lowercase() } ?: emptyList()
     }
 
     private fun deduplicate(pois: List<POI>): List<POI> {

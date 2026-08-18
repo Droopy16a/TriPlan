@@ -108,25 +108,35 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectCity(properties: Properties) {
         _selectedCityProperties.value = properties
-        _destinationQuery.value = properties.displayName
+        updateDestinationQuery(properties.displayName, triggerSuggestions = false)
     }
 
     fun clearSelection() {
         _selectedCityProperties.value = null
     }
 
-    fun updateDestinationQuery(query: String) {
+    fun updateDestinationQuery(query: String, triggerSuggestions: Boolean = true) {
         _destinationQuery.value = query
-        updateDestinationSuggestions(query)
+        if (triggerSuggestions) {
+            updateDestinationSuggestions(query)
+        } else {
+            suggestionJob?.cancel()
+            _destinationSuggestions.value = emptyList()
+        }
     }
 
     fun updateExploreSearchQuery(query: String) {
         _exploreSearchQuery.value = query
     }
 
-    fun updateDepartureQuery(query: String) {
+    fun updateDepartureQuery(query: String, triggerSuggestions: Boolean = true) {
         _departureQuery.value = query
-        updateDepartureSuggestions(query)
+        if (triggerSuggestions) {
+            updateDepartureSuggestions(query)
+        } else {
+            suggestionJob?.cancel()
+            _departureSuggestions.value = emptyList()
+        }
     }
 
     fun updateDateRange(start: LocalDate?, end: LocalDate?) {

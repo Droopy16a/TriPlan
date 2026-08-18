@@ -14,35 +14,41 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntSize
 
+/**
+ * A highly polished shimmer modifier for skeleton loaders.
+ * Features a 45-degree angle and smooth transitions.
+ */
 fun Modifier.shimmer(): Modifier = composed {
     var size by remember { mutableStateOf(IntSize.Zero) }
     val transition = rememberInfiniteTransition(label = "shimmer")
-    val startOffsetX by transition.animateFloat(
-        initialValue = -2 * size.width.toFloat(),
-        targetValue = 2 * size.width.toFloat(),
+    
+    val translateAnim by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2000f,
         animationSpec = infiniteRepeatable(
-            animation = buildTween(),
+            animation = tween(
+                durationMillis = 1200,
+                easing = FastOutSlowInEasing
+            ),
             repeatMode = RepeatMode.Restart
         ),
         label = "shimmer"
     )
 
-    background(
-        brush = Brush.linearGradient(
-            colors = listOf(
-                Color(0xFFEBEBF4),
-                Color(0xFFF4F4F4),
-                Color(0xFFEBEBF4),
-            ),
-            start = Offset(startOffsetX, 0f),
-            end = Offset(startOffsetX + size.width.toFloat(), size.height.toFloat())
-        )
-    ).onGloballyPositioned {
-        size = it.size
-    }
-}
+    val shimmerColors = listOf(
+        Color(0xFFEBEBF4),
+        Color(0xFFF4F4F4),
+        Color(0xFFEBEBF4),
+    )
 
-private fun buildTween(): TweenSpec<Float> = tween(
-    durationMillis = 1000,
-    easing = LinearEasing
-)
+    val brush = Brush.linearGradient(
+        colors = shimmerColors,
+        start = Offset(translateAnim - 1000f, translateAnim - 1000f),
+        end = Offset(translateAnim, translateAnim)
+    )
+
+    background(brush = brush)
+        .onGloballyPositioned {
+            size = it.size
+        }
+}

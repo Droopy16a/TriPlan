@@ -404,6 +404,88 @@ fun HeroTripCard(
 }
 
 @Composable
+fun HeroTripCardSkeleton(
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(440.dp)
+            .border(
+                width = 1.dp,
+                color = Color.Black.copy(alpha = 0.05f),
+                shape = RoundedCornerShape(28.dp)
+            ),
+        shape = RoundedCornerShape(28.dp),
+        color = Color.White,
+        shadowElevation = 0.dp
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header Area
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(210.dp)
+                    .shimmer()
+            )
+
+            // Bottom Content
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .shimmer()
+                    )
+                    Spacer(modifier = Modifier.width(20.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .width(140.dp)
+                                .height(24.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .shimmer()
+                        )
+                        Box(
+                            modifier = Modifier
+                                .width(100.dp)
+                                .height(16.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .shimmer()
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                Box(
+                    modifier = Modifier
+                        .width(120.dp)
+                        .height(16.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .shimmer()
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .clip(CircleShape)
+                        .background(UIBorderGray)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun PopularTripCardSkeleton(
     modifier: Modifier = Modifier
 ) {

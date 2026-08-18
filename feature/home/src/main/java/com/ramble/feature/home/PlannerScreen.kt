@@ -31,6 +31,7 @@ import org.maplibre.android.maps.Style
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
+import android.os.Build
 import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
@@ -83,7 +84,10 @@ fun PlannerScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions.values.all { it }) {
+        val locationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        
+        if (locationGranted) {
             mapInstance?.let { map ->
                 map.style?.let { style ->
                     enableLocation(context, map, style)
@@ -248,12 +252,14 @@ fun PlannerScreen(
                             if (ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                                 enableLocation(ctx, map, style)
                             } else {
-                                permissionLauncher.launch(
-                                    arrayOf(
-                                        Manifest.permission.ACCESS_FINE_LOCATION,
-                                        Manifest.permission.ACCESS_COARSE_LOCATION
-                                    )
+                                val permissions = mutableListOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
                                 )
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                                permissionLauncher.launch(permissions.toTypedArray())
                             }
                         }
                         
@@ -357,9 +363,9 @@ fun PlannerScreen(
             },
             onSuggestionClick = { field, suggestion ->
                 if (field == SearchField.Departure) {
-                    viewModel.updateDepartureQuery(suggestion.displayName)
+                    viewModel.updateDepartureQuery(suggestion.displayName, triggerSuggestions = false)
                 } else {
-                    viewModel.updateDestinationQuery(suggestion.displayName)
+                    viewModel.updateDestinationQuery(suggestion.displayName, triggerSuggestions = false)
                 }
             },
             onClearDepartureSuggestions = { viewModel.updateDepartureSuggestions("") },

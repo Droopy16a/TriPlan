@@ -28,10 +28,10 @@ class TripPlanningOrchestrator(private val aiService: AiPlannerService) {
             ?: return Result.failure(Exception("Could not geocode destination: $destination"))
 
         val allPois = aiService.placesProvider.getPOIs(coords)
-        val filteredPois = aiService.filterEngine.filterAndRank(allPois, limit = 50)
+        val filteredPois = aiService.filterEngine.filterAndRank(allPois, limit = 50, adhocPreferences = preferences)
         
         val allAccommodation = aiService.placesProvider.getAccommodation(coords)
-        val filteredAccommodation = aiService.filterEngine.filterAndRankAccommodation(allAccommodation, limit = 15)
+        val filteredAccommodation = aiService.filterEngine.filterAndRankAccommodation(allAccommodation, limit = 15, adhocPreferences = preferences)
         
         val weather = aiService.weatherProvider.getForecast(coords.lat, coords.lon, startDate, endDate)
 

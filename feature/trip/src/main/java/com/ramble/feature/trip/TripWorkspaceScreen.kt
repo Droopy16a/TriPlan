@@ -98,6 +98,7 @@ import android.graphics.Rect as AndroidRect
 import androidx.core.content.res.ResourcesCompat
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import com.ramble.core.ai.CommunityTripRepository
 import android.net.Uri
 import androidx.compose.animation.core.spring
@@ -126,6 +127,7 @@ import com.ramble.core.designsystem.theme.UIBackgroundGray
 import com.ramble.core.designsystem.theme.BrandLightGreen
 import com.ramble.core.designsystem.util.clickWithDelay
 import com.ramble.core.designsystem.util.parseCurrency
+import com.ramble.core.designsystem.util.shimmer
 import com.ramble.core.ai.SavedTrip
 import com.ramble.core.ai.TripItinerary
 import com.ramble.core.ai.TripRepository
@@ -163,7 +165,10 @@ fun TripWorkspaceScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions.values.all { it }) {
+        val locationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        
+        if (locationGranted) {
             maplibreMapRef?.let { map ->
                 map.style?.let { style ->
                     enableLocation(context, map, style)
@@ -419,12 +424,14 @@ fun TripWorkspaceScreen(
                                 if (ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                                     enableLocation(ctx, map, style)
                                 } else {
-                                    permissionLauncher.launch(
-                                        arrayOf(
-                                            Manifest.permission.ACCESS_FINE_LOCATION,
-                                            Manifest.permission.ACCESS_COARSE_LOCATION
-                                        )
+                                    val permissions = mutableListOf(
+                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION
                                     )
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                                    }
+                                    permissionLauncher.launch(permissions.toTypedArray())
                                 }
                             }
                         }
@@ -1187,40 +1194,34 @@ fun ItineraryView(
                         }
                     }
                 } else {
-                    if (pageIndex == 0) {
-                        item {
-                            Column(
-                                modifier = Modifier.fillMaxWidth().graphicsLayer {
-                                    val pageOffset = ((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction).absoluteValue
-                                    this.alpha = (1f - pageOffset * 1.5f).coerceIn(0f, 1f)
-                                    this.translationX = pageOffset * 200f
-                                }
-                                    .background(UIBackgroundGray.copy(alpha = 0.5f))
-                                    .padding(horizontal = 32.dp, vertical = 20.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("Day 1", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = DeepGraphite)
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(text = "May 10, Sat", style = MaterialTheme.typography.bodyMedium, color = DeepGraphite.copy(alpha = 0.6f))
-                                    }
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Icon(imageVector = Icons.Default.WbSunny, contentDescription = "Sunny", tint = Color(0xFFFDB813), modifier = Modifier.size(18.dp))
-                                        Text(text = "22°C", style = MaterialTheme.typography.bodyMedium, color = DeepGraphite.copy(alpha = 0.8f))
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
+                    // Skeletons
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(UIBackgroundGray.copy(alpha = 0.5f))
+                                .padding(horizontal = 32.dp, vertical = 20.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(modifier = Modifier.width(100.dp).height(28.dp).clip(RoundedCornerShape(4.dp)).shimmer())
+                            Box(modifier = Modifier.width(200.dp).height(20.dp).clip(RoundedCornerShape(4.dp)).shimmer())
                         }
-                        item { Box(modifier = Modifier.padding(horizontal = 32.dp)) { TimelineItem(icon = Icons.Default.FlightTakeoff, text = "Paris CDG (Terminal 2E)", time = "13:30", lat = 49.0097, lon = 2.5479, geocodingProvider = geocodingProvider, onClick = { onLocationSelected(LatLng(49.0097, 2.5479)) }) } }
-                        item { Box(modifier = Modifier.padding(horizontal = 32.dp)) { TimelineDots(count = 6) } }
-                        item { Box(modifier = Modifier.padding(horizontal = 32.dp)) { TimelineItem(icon = Icons.Default.FlightLand, text = "Osaka KIX (Terminal 1)", time = "08:30 (+1)", lat = 34.4320, lon = 135.2304, geocodingProvider = geocodingProvider, onClick = { onLocationSelected(LatLng(34.4320, 135.2304)) }) } }
-                        item { Box(modifier = Modifier.padding(horizontal = 32.dp)) { TimelineDots(count = 3) } }
-                        item { Box(modifier = Modifier.padding(horizontal = 32.dp)) { TimelineItem(icon = Icons.Default.DirectionsTransit, text = "Haruka Express to Kyoto", time = "10:15", lat = 35.0116, lon = 135.7681, geocodingProvider = geocodingProvider, onClick = { onLocationSelected(LatLng(35.0116, 135.7681)) }) } }
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                    
+                    repeat(5) { index ->
+                        item {
+                            Box(modifier = Modifier.padding(horizontal = 32.dp)) {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().height(100.dp).shimmer(),
+                                    shape = RoundedCornerShape(24.dp),
+                                    color = Color.Transparent
+                                ) {}
+                            }
+                        }
+                        if (index < 4) {
+                            item { Box(modifier = Modifier.padding(horizontal = 32.dp)) { TimelineDots(count = 3) } }
+                        }
                     }
                 }
             }

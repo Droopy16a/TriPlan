@@ -228,11 +228,11 @@ class AiPlannerService(private val context: Context) {
             1. Generate EXACTLY ${chunkEndDay - chunkStartDay + 1} days for this chunk.
             2. The 'dayNumber' must range from $chunkStartDay to $chunkEndDay sequentially.
             3. The 'date' for each day must be exactly correct (YYYY-MM-DD).
-            4. A normal full day should contain approximately 4–6 meaningful steps.
+            4. A normal full day should contain approximately 4–7 meaningful steps.
             5. Steps can include: Food, Activity, Transport, FreeTime, Accommodation.
             6. Arrival/departure days may contain fewer steps.
             7. Do not repeat places listed in 'ALREADY USED PLACES'.
-            8. Only use places from 'CANDIDATE PLACES' for activities/food.
+            8. REAL PLACES ONLY: For every 'Food' or 'Activity' step, the 'title' MUST be the exact 'name' of a POI from the 'CANDIDATE PLACES' list. DO NOT invent generic names or neighborhood descriptions like "Lunch at Marais" or "Visit Shinjuku". You must select a SPECIFIC venue name from the candidate list.
             9. Only recommend accommodation from the supplied 'ACCOMMODATION CANDIDATES'.
             10. Do not invent hotels, prices, or availability. If accommodation price is not in the data, set estimatedCost to null. If no accommodation is available, state that in the summary.
             11. Take the departure location ($departure) into account for the first and last day (e.g., travel times, airports, train stations).
@@ -244,6 +244,8 @@ class AiPlannerService(private val context: Context) {
             17. Travel Style: Adapt the daily pacing to the TRAVELER PROFILE travel style. "Budget" → favor free/cheap activities; "Balanced" → mix of free and paid; "Comfort" → mid-range venues; "Luxury" → premium experiences.
             18. Food Preferences: If the traveler profile lists dietary preferences (Vegetarian, Vegan, Halal, Gluten-free), filter food recommendations accordingly.
             19. Transportation Preference: Prefer the traveler's stated transportation modes when planning inter-step travel (e.g., Walking, Public transport, Car, Taxi, Bike).
+            20. NIGHTLIFE & EVENING: If "Nightlife" is in the Interests or User notes, you MUST include activities AFTER 08:00 PM (e.g., Food at a Bar/Pub or an Activity at a Nightclub). A day with nightlife should typically have its last step between 11:00 PM and 01:00 AM.
+            21. FULL DAY COVERAGE: A standard day should start around 08:30 AM – 09:30 AM and end NO EARLIER than 08:30 PM (or much later if Nightlife is requested).
             
             Return the result ONLY as a valid JSON object matching this schema exactly:
             {
@@ -266,7 +268,7 @@ class AiPlannerService(private val context: Context) {
                   "steps": [
                     {
                       "time": "String (e.g. 09:00 AM)",
-                      "title": "String (Real place from Candidates don't hallucinate)",
+                      "title": "String (EXACT name of a real place from Candidates)",
                       "description": "String",
                       "category": "String (Food, Activity, Transport, FreeTime, or Accommodation)",
                       "estimatedCost": "Double (e.g. 25.50)",

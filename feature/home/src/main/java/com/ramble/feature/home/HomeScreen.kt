@@ -98,6 +98,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import com.ramble.feature.home.component.HeroTripCard
+import com.ramble.feature.home.component.HeroTripCardSkeleton
 import com.ramble.feature.home.component.PopularTripCard
 import com.ramble.feature.home.component.PopularTripCardSkeleton
 import coil.compose.AsyncImage
@@ -262,13 +263,8 @@ fun HomeScreen(
         ) {
             item {
                 if (loadingTrips) {
-                    Box(
-                        modifier = Modifier
-                            .padding(horizontal = 32.dp)
-                            .fillMaxWidth()
-                            .height(440.dp)
-                            .clip(RoundedCornerShape(28.dp))
-                            .shimmer()
+                    HeroTripCardSkeleton(
+                        modifier = Modifier.padding(horizontal = 32.dp)
                     )
                 } else {
                     val isEmpty = savedTrips.isEmpty()
@@ -427,9 +423,9 @@ fun HomeScreen(
             },
             onSuggestionClick = { field, suggestion ->
                 if (field == SearchField.Departure) {
-                    viewModel.updateDepartureQuery(suggestion.displayName)
+                    viewModel.updateDepartureQuery(suggestion.displayName, triggerSuggestions = false)
                 } else {
-                    viewModel.updateDestinationQuery(suggestion.displayName)
+                    viewModel.updateDestinationQuery(suggestion.displayName, triggerSuggestions = false)
                 }
             },
             onClearDepartureSuggestions = { viewModel.updateDepartureSuggestions("") },
@@ -638,7 +634,10 @@ fun SearchBar(
                     val locationPermissionLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestMultiplePermissions()
                     ) { permissions ->
-                        if (permissions.values.any { it }) {
+                        val locationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+                        
+                        if (locationGranted) {
                             // Location granted, try to get location
                             try {
                                 val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
@@ -663,13 +662,15 @@ fun SearchBar(
                     }
 
                     LaunchedEffect(Unit) {
-                        // Request location on form open to pre-fill departure
-                        locationPermissionLauncher.launch(
-                            arrayOf(
-                                Manifest.permission.ACCESS_FINE_LOCATION,
-                                Manifest.permission.ACCESS_COARSE_LOCATION
-                            )
+                        // Request location and notifications on form open
+                        val permissions = mutableListOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
                         )
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                        locationPermissionLauncher.launch(permissions.toTypedArray())
                     }
 
                     val dateRangePickerState = rememberDateRangePickerState(
