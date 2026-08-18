@@ -78,6 +78,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     // Expose the list of saved trips (refreshes when a new one is saved)
     val savedTrips: StateFlow<List<SavedTrip>> = TripRepository.trips
+    val loadingTrips: StateFlow<Boolean> = TripRepository.loadingTrips
 
     private val _selectedCityProperties = MutableStateFlow<Properties?>(null)
     val selectedCityProperties: StateFlow<Properties?> = _selectedCityProperties

@@ -507,7 +507,7 @@ fun TripSheetContent(
     }
     val spentBudget = remember(aiItinerary, currentTrip?.expenses) {
         val itineraryCost = aiItinerary?.days?.flatMap { it.steps }?.sumOf { it.estimatedCost ?: 0.0 } ?: 0.0
-        val manualExpenses = currentTrip?.expenses?.sumOf { it.amount } ?: 0.0
+        val manualExpenses = currentTrip?.expenses?.filter { !it.isSettlement }?.sumOf { it.amount } ?: 0.0
         itineraryCost + manualExpenses
     }
     val tripMembers = remember(currentTrip?.id, currentTrip?.memberNames, currentTrip?.travelers, tripMemberProfiles) {
@@ -734,7 +734,24 @@ fun TripSheetContent(
                 MembersView(
                     members = tripMembers,
                     expenses = currentTrip?.expenses ?: emptyList(),
-                    memberAvatarUrls = memberAvatarUrls
+                    memberAvatarUrls = memberAvatarUrls,
+                    isLoading = tripId != null && currentTrip == null,
+                    onSettleDebt = { debt ->
+                        tripId?.let { id ->
+                            val settlementExpense = Expense(
+                                id = java.util.UUID.randomUUID().toString(),
+                                emoji = "💸",
+                                title = "Settlement: ${debt.debtor} to ${debt.creditor}",
+                                subtitle = "Debt settlement",
+                                amount = debt.amount,
+                                date = LocalDate.now().format(DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.US)),
+                                payer = debt.debtor,
+                                participants = listOf(debt.creditor),
+                                isSettlement = true
+                            )
+                            TripRepository.addExpense(id, settlementExpense)
+                        }
+                    }
                 )
             }
         }

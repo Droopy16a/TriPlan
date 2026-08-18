@@ -1,5 +1,6 @@
 package com.ramble.feature.trip
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -8,11 +9,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.TrendingDown
-import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +18,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -29,6 +28,7 @@ import com.ramble.core.designsystem.theme.BrandLightGreen
 import com.ramble.core.designsystem.theme.DeepGraphite
 import com.ramble.core.designsystem.theme.UIBackgroundGray
 import com.ramble.core.designsystem.theme.UIBorderGray
+import com.ramble.core.designsystem.util.shimmer
 import java.util.Locale
 
 data class MemberBalance(
@@ -103,8 +103,15 @@ fun calculateSettlements(balances: List<MemberBalance>): List<Debt> {
 fun MembersView(
     members: List<String>,
     expenses: List<Expense>,
-    memberAvatarUrls: Map<String, String> = emptyMap()
+    memberAvatarUrls: Map<String, String> = emptyMap(),
+    isLoading: Boolean = false,
+    onSettleDebt: (Debt) -> Unit = {}
 ) {
+    if (isLoading) {
+        MembersSkeleton()
+        return
+    }
+
     val balances = remember(members, expenses) { calculateBalances(members, expenses) }
     val mainMember = remember(members) { members.firstOrNull() ?: "Me" }
     val myBalance = remember(balances, mainMember) { balances.find { it.name == mainMember }?.balance ?: 0.0 }
@@ -149,7 +156,10 @@ fun MembersView(
             }
 
             items(settlements) { debt ->
-                SettlementItem(debt = debt)
+                SettlementItem(
+                    debt = debt,
+                    onSettleClick = { onSettleDebt(debt) }
+                )
             }
         }
     }
@@ -198,7 +208,7 @@ fun SummaryCard(myBalance: Double) {
             if (amount.isNotEmpty()) {
                 Text(
                     amount,
-                    style = MaterialTheme.typography.displayMedium,
+                    style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Bold,
                     color = contentColor
                 )
@@ -251,7 +261,7 @@ fun MemberBalanceItem(
                 Spacer(Modifier.width(12.dp))
                 Text(
                     balance.name,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     color = DeepGraphite
                 )
@@ -266,7 +276,7 @@ fun MemberBalanceItem(
                 }
                 Text(
                     text = if (balance.balance > 0.01) "+ $formatted" else if (balance.balance < -0.01) "- $formatted" else "$ 0",
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                     color = color
                 )
@@ -281,41 +291,198 @@ fun MemberBalanceItem(
 }
 
 @Composable
-fun SettlementItem(debt: Debt) {
+fun SettlementItem(
+    debt: Debt,
+    onSettleClick: () -> Unit = {}
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = UIBackgroundGray.copy(alpha = 0.5f)
+        shape = RoundedCornerShape(20.dp),
+        color = Color.White,
+        border = BorderStroke(1.dp, UIBorderGray.copy(alpha = 0.5f))
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(16.dp)
         ) {
-            Text(
-                debt.debtor,
-                fontWeight = FontWeight.Bold,
-                color = DeepGraphite,
-                style = MaterialTheme.typography.bodyMedium
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Ower",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Gray
+                    )
+                    Text(
+                        text = debt.debtor,
+                        fontWeight = FontWeight.Bold,
+                        color = DeepGraphite,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Icon(
+                    imageVector = Icons.Default.ArrowForward,
+                    contentDescription = null,
+                    modifier = Modifier.padding(horizontal = 12.dp).size(20.dp),
+                    tint = BrandLightGreen
+                )
+
+                Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "Recipient",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Gray
+                    )
+                    Text(
+                        text = debt.creditor,
+                        fontWeight = FontWeight.Bold,
+                        color = DeepGraphite,
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.End,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    color = UIBackgroundGray.copy(alpha = 0.3f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Amount",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = DeepGraphite.copy(alpha = 0.7f)
+                        )
+                        Text(
+                            text = java.text.NumberFormat.getCurrencyInstance(Locale.US).format(debt.amount),
+                            fontWeight = FontWeight.ExtraBold,
+                            color = DeepGraphite,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+
+                Button(
+                    onClick = onSettleClick,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandLightGreen),
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    modifier = Modifier.height(40.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = DeepGraphite
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "Settle",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = DeepGraphite
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MembersSkeleton() {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .shimmer()
             )
-            Icon(
-                Icons.Default.ArrowForward,
-                contentDescription = null,
-                modifier = Modifier.padding(horizontal = 8.dp).size(16.dp),
-                tint = Color.Gray
+        }
+
+        item {
+            Box(
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .width(100.dp)
+                    .height(24.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .shimmer()
             )
-            Text(
-                debt.creditor,
-                fontWeight = FontWeight.Bold,
-                color = DeepGraphite,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                java.text.NumberFormat.getCurrencyInstance(Locale.US).format(debt.amount),
-                fontWeight = FontWeight.Bold,
-                color = DeepGraphite,
-                style = MaterialTheme.typography.bodyMedium
-            )
+        }
+
+        items(5) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(72.dp)
+                    .border(1.dp, UIBorderGray, RoundedCornerShape(20.dp)),
+                shape = RoundedCornerShape(20.dp),
+                color = Color.White
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .shimmer()
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(80.dp)
+                                .height(20.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .shimmer()
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Box(
+                            modifier = Modifier
+                                .width(60.dp)
+                                .height(20.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .shimmer()
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(40.dp)
+                                .height(12.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .shimmer()
+                        )
+                    }
+                }
+            }
         }
     }
 }

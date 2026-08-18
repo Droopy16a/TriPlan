@@ -485,7 +485,8 @@ fun AddExpenseDialog(
                             amount = amountDouble,
                             date = DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.US).format(date),
                             payer = paidBy,
-                            participants = if (isShared) selectedParticipants.toList() else listOf(paidBy)
+                            participants = if (isShared) selectedParticipants.toList() else listOf(paidBy),
+                            isSettlement = expenseToEdit?.isSettlement ?: false
                         )
                     )
                 },
@@ -698,7 +699,7 @@ fun ExpenseDetailDialog(
                         Text(expense.emoji, fontSize = 40.sp)
                     }
                     Spacer(Modifier.height(16.dp))
-                    Text(expense.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = DeepGraphite)
+                    Text(expense.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = DeepGraphite)
                     Text(expense.date, style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
                 }
 
@@ -723,11 +724,11 @@ fun ExpenseDetailDialog(
                                     Text(expense.payer.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
                                 }
                                 Spacer(Modifier.width(12.dp))
-                                Text(expense.payer, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = DeepGraphite)
+                                Text(expense.payer, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = DeepGraphite)
                             }
                             Text(
                                 text = String.format(Locale.US, "$ %.2f", expense.amount),
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = DeepGraphite
                             )
@@ -761,12 +762,12 @@ fun ExpenseDetailDialog(
                                             }
                                             Spacer(Modifier.width(12.dp))
                                             Column {
-                                                Text(participant, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = DeepGraphite)
+                                                Text(participant, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = DeepGraphite)
                                             }
                                         }
                                         Text(
                                             text = String.format(Locale.US, "$ %.2f", shareAmount),
-                                            style = MaterialTheme.typography.bodyLarge,
+                                            style = MaterialTheme.typography.bodyMedium,
                                             fontWeight = FontWeight.Medium,
                                             color = DeepGraphite
                                         )

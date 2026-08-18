@@ -29,7 +29,8 @@ data class Expense(
     val amount: Double,
     val date: String,
     val payer: String = "Me",
-    val participants: List<String> = emptyList()
+    val participants: List<String> = emptyList(),
+    val isSettlement: Boolean = false
 )
 
 /**
@@ -112,6 +113,8 @@ object TripRepository {
     
     private val _trips = MutableStateFlow<List<SavedTrip>>(emptyList())
     val trips: StateFlow<List<SavedTrip>> = _trips.asStateFlow()
+    private val _loadingTrips = MutableStateFlow(false)
+    val loadingTrips: StateFlow<Boolean> = _loadingTrips.asStateFlow()
     private val _tripMemberProfiles = MutableStateFlow<Map<String, List<TripMemberProfile>>>(emptyMap())
     val tripMemberProfiles: StateFlow<Map<String, List<TripMemberProfile>>> = _tripMemberProfiles.asStateFlow()
     private val placeholderRegex = Regex("^member\\s+\\d+$", RegexOption.IGNORE_CASE)
@@ -134,6 +137,7 @@ object TripRepository {
         val authState = AuthRepository.authState.value
         if (authState !is AuthState.Authenticated) return
 
+        _loadingTrips.value = true
         try {
             syncOwnProfile(authState)
             val ownedTrips = supabase.postgrest["trips"]
@@ -165,8 +169,24 @@ object TripRepository {
             loadMembersForTrips(result.map { it.id })
         } catch (e: Exception) {
             e.printStackTrace()
+        } finally {
+            _loadingTrips.value = false
         }
     }
+
+@Serializable
+private data class TripUpdate(
+    val title: String,
+    val destination: String,
+    val dates: String?,
+    val travelers: String?,
+    val budget: String?,
+    val preferences: String?,
+    val emoji: String?,
+    @SerialName("image_url") val imageUrl: String?,
+    val itinerary: TripItinerary?,
+    val expenses: List<Expense>?
+)
 
     fun save(trip: SavedTrip) {
         val authState = AuthRepository.authState.value
@@ -196,10 +216,32 @@ object TripRepository {
         
         scope.launch {
             try {
-                supabase.postgrest["trips"].upsert(tripWithUser)
+                // If we are not the owner, use update instead of upsert to avoid violating INSERT RLS policies
+                if (trip.userId != null && trip.userId != authState.userId) {
+                    val updateData = TripUpdate(
+                        title = tripWithUser.title,
+                        destination = tripWithUser.destination,
+                        dates = tripWithUser.dates,
+                        travelers = tripWithUser.travelers,
+                        budget = tripWithUser.budget,
+                        preferences = tripWithUser.preferences,
+                        emoji = tripWithUser.emoji,
+                        imageUrl = tripWithUser.imageUrl,
+                        itinerary = tripWithUser.itinerary,
+                        expenses = tripWithUser.expenses
+                    )
+                    supabase.postgrest["trips"].update(updateData) {
+                        filter {
+                            eq("id", tripWithUser.id)
+                        }
+                    }
+                } else {
+                    supabase.postgrest["trips"].upsert(tripWithUser)
+                }
                 ensureTripMember(trip.id, authState)
                 loadTrips()
             } catch (e: Exception) {
+                Log.e("TripRepository", "Failed to save trip ${trip.id}", e)
                 e.printStackTrace()
             }
         }

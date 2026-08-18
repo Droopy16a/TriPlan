@@ -16,6 +16,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ramble.core.ai.SavedTrip
 import com.ramble.core.designsystem.theme.DeepGraphite
+import com.ramble.core.designsystem.util.shimmer
+import com.ramble.feature.home.component.PopularTripCard
+import com.ramble.feature.home.component.PopularTripCardSkeleton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,27 +97,51 @@ fun ExploreScreen(
             verticalArrangement = Arrangement.spacedBy(32.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            groupedTrips.forEach { (country, trips) ->
+            if (searchResults.isEmpty()) {
                 item {
                     Column {
-                        Text(
-                            text = country,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontSize = 22.sp,
-                            color = DeepGraphite,
-                            modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 16.dp)
+                        Box(
+                            modifier = Modifier
+                                .padding(start = 24.dp, bottom = 16.dp)
+                                .width(120.dp)
+                                .height(24.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .shimmer()
                         )
                         
                         androidx.compose.foundation.lazy.LazyRow(
                             contentPadding = PaddingValues(horizontal = 24.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            items(trips.size, key = { trips[it].id }) { index ->
-                                val trip = trips[index]
-                                PopularTripCard(
-                                    trip = trip,
-                                    onClick = { onTripClick(trip) }
-                                )
+                            items(4) {
+                                PopularTripCardSkeleton()
+                            }
+                        }
+                    }
+                }
+            } else {
+                groupedTrips.forEach { (country, trips) ->
+                    item {
+                        Column {
+                            Text(
+                                text = country,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontSize = 22.sp,
+                                color = DeepGraphite,
+                                modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 16.dp)
+                            )
+                            
+                            androidx.compose.foundation.lazy.LazyRow(
+                                contentPadding = PaddingValues(horizontal = 24.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                items(trips.size, key = { trips[it].id }) { index ->
+                                    val trip = trips[index]
+                                    PopularTripCard(
+                                        trip = trip,
+                                        onClick = { onTripClick(trip) }
+                                    )
+                                }
                             }
                         }
                     }
