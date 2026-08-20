@@ -59,9 +59,62 @@ class AiPlannerService(private val context: Context) {
     val weatherProvider = OpenMeteoWeatherProvider(httpClient)
     val filterEngine = CandidateFilterEngine()
 
+    private val inMemoryItineraryCache = java.util.concurrent.ConcurrentHashMap<String, TripItinerary>()
+
+    private fun computeCacheKey(
+        departure: String,
+        destination: String,
+        startDate: LocalDate?,
+        endDate: LocalDate?,
+        travelers: String,
+        budget: String,
+        preferences: String
+    ): String {
+        val raw = "${departure.trim().lowercase()}|${destination.trim().lowercase()}|$startDate|$endDate|${travelers.trim().lowercase()}|${budget.trim().lowercase()}|${preferences.trim().lowercase()}"
+        return try {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val digest = md.digest(raw.toByteArray())
+            digest.joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            raw.hashCode().toString()
+        }
+    }
+
+    private fun getCachedItinerary(cacheKey: String): TripItinerary? {
+        inMemoryItineraryCache[cacheKey]?.let { return it }
+        return try {
+            val cacheDir = java.io.File(context.cacheDir, "itinerary_cache")
+            val file = java.io.File(cacheDir, "$cacheKey.json")
+            if (file.exists()) {
+                val jsonStr = file.readText()
+                if (jsonStr.isNotBlank()) {
+                    val itinerary = json.decodeFromString<TripItinerary>(jsonStr)
+                    inMemoryItineraryCache[cacheKey] = itinerary
+                    itinerary
+                } else null
+            } else null
+        } catch (e: Exception) {
+            Log.e("AiPlanner", "Error reading itinerary cache", e)
+            null
+        }
+    }
+
+    private fun saveCachedItinerary(cacheKey: String, itinerary: TripItinerary) {
+        inMemoryItineraryCache[cacheKey] = itinerary
+        try {
+            val cacheDir = java.io.File(context.cacheDir, "itinerary_cache")
+            if (!cacheDir.exists()) cacheDir.mkdirs()
+            val file = java.io.File(cacheDir, "$cacheKey.json")
+            val jsonStr = json.encodeToString(itinerary)
+            file.writeText(jsonStr)
+        } catch (e: Exception) {
+            Log.e("AiPlanner", "Error saving itinerary cache", e)
+        }
+    }
+
     /**
      * Entry point for generating a trip. 
-     * Now primarily delegates to TripPlanningOrchestrator for chunking logic.
+     * Checks local cache first before delegating to TripPlanningOrchestrator.
      */
     suspend fun generateTrip(
         departure: String,
@@ -72,10 +125,22 @@ class AiPlannerService(private val context: Context) {
         budget: String,
         preferences: String
     ): Result<TripItinerary> {
+        val cacheKey = computeCacheKey(departure, destination, startDate, endDate, travelers, budget, preferences)
+        getCachedItinerary(cacheKey)?.let { cached ->
+            Log.d("AiPlanner", "Returning cached trip itinerary for $destination")
+            return Result.success(cached)
+        }
+
         val orchestrator = TripPlanningOrchestrator(this)
-        return orchestrator.generateItinerary(
+        val result = orchestrator.generateItinerary(
             departure, destination, startDate, endDate, travelers, budget, preferences
         )
+        if (result.isSuccess) {
+            result.getOrNull()?.let { itinerary ->
+                saveCachedItinerary(cacheKey, itinerary)
+            }
+        }
+        return result
     }
 
     /**
@@ -229,7 +294,7 @@ class AiPlannerService(private val context: Context) {
             2. The 'dayNumber' must range from $chunkStartDay to $chunkEndDay sequentially.
             3. The 'date' for each day must be exactly correct (YYYY-MM-DD).
             4. A normal full day should contain approximately 4–7 meaningful steps.
-            5. Steps can include: Food, Activity, Transport, FreeTime, Accommodation.
+            5. Steps can include: Food, Activity, Transport, FreeTime, Accommodation, Shopping, Nature, Hiking, Beach, Museum, Nightlife, Cafe, Attractions, Viewpoint, Entertainment.
             6. Arrival/departure days may contain fewer steps.
             7. Do not repeat places listed in 'ALREADY USED PLACES'.
             8. REAL PLACES ONLY: For every 'Food' or 'Activity' step, the 'title' MUST be the exact 'name' of a POI from the 'CANDIDATE PLACES' list. DO NOT invent generic names or neighborhood descriptions like "Lunch at Marais" or "Visit Shinjuku". You must select a SPECIFIC venue name from the candidate list.
@@ -270,7 +335,7 @@ class AiPlannerService(private val context: Context) {
                       "time": "String (e.g. 09:00 AM)",
                       "title": "String (EXACT name of a real place from Candidates)",
                       "description": "String",
-                      "category": "String (Food, Activity, Transport, FreeTime, or Accommodation)",
+                      "category": "String (Food, Activity, Transport, FreeTime, Accommodation, Shopping, Nature, Hiking, Beach, Museum, Nightlife, Cafe, Attractions, Viewpoint, or Entertainment)",
                       "estimatedCost": "Double (e.g. 25.50)",
                       "lat": "Double",
                       "lon": "Double"

@@ -66,7 +66,7 @@ fun ProfileScreen(
 
     Surface(
         modifier = modifier.fillMaxSize(),
-        color = Color.White
+        color = OffWhite
     ) {
         val topPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
         val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -671,7 +671,7 @@ fun SettingsSection(
                 .fillMaxWidth()
                 .clickable { onSignOut() }
                 .padding(vertical = 12.dp),
-            color = TravelRed,
+            color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyLarge
         )
         Text(
@@ -680,7 +680,7 @@ fun SettingsSection(
                 .fillMaxWidth()
                 .clickable { }
                 .padding(vertical = 12.dp),
-            color = TravelRed,
+            color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyLarge
         )
     }
@@ -703,10 +703,14 @@ fun BusinessBanner() {
             Surface(
                 modifier = Modifier.size(48.dp),
                 shape = RoundedCornerShape(12.dp),
-                color = SkyBlueLight.copy(alpha = 0.3f)
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Business, contentDescription = null, tint = SkyBlue)
+                    Icon(
+                        Icons.Default.Business,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
             Spacer(modifier = Modifier.width(16.dp))

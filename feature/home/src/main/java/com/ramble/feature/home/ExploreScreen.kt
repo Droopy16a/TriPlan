@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ramble.core.ai.SavedTrip
 import com.ramble.core.designsystem.theme.DeepGraphite
+import com.ramble.core.designsystem.theme.OffWhite
 import com.ramble.core.designsystem.util.shimmer
 import com.ramble.feature.home.component.PopularTripCard
 import com.ramble.feature.home.component.PopularTripCardSkeleton
@@ -33,7 +34,7 @@ fun ExploreScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFFF8F7F5))
+            .background(OffWhite)
             .statusBarsPadding()
     ) {
         // Search Header

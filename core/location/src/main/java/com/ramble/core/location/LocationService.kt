@@ -19,8 +19,16 @@ class LocationService {
         }
     }
 
+    private val suggestionCache = android.util.LruCache<String, List<Properties>>(50)
+
     suspend fun getAutocompleteSuggestions(query: String): List<Properties> {
-        if (query.isBlank()) return emptyList()
+        val normalizedKey = query.trim().lowercase()
+        if (normalizedKey.isBlank()) return emptyList()
+
+        val cached = suggestionCache.get(normalizedKey)
+        if (cached != null) {
+            return cached
+        }
         
         return try {
             val response: PhotonResponse = client.get("https://photon.komoot.io/api/") {
@@ -28,12 +36,16 @@ class LocationService {
                 parameter("limit", 5)
             }.body()
             
-            response.features.map { feature ->
+            val results = response.features.map { feature ->
                 feature.properties.copy(
                     lat = feature.geometry.coordinates.getOrNull(1),
                     lon = feature.geometry.coordinates.getOrNull(0)
                 )
             }
+            if (results.isNotEmpty()) {
+                suggestionCache.put(normalizedKey, results)
+            }
+            results
         } catch (e: Exception) {
             android.util.Log.e("LocationService", "Error fetching suggestions: ${e.message}", e)
             emptyList()

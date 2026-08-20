@@ -37,6 +37,7 @@ import com.ramble.core.designsystem.theme.DeepGraphite
 import com.ramble.core.designsystem.theme.BrandLightGreen
 import com.ramble.core.designsystem.theme.UIBackgroundGray
 import com.ramble.core.designsystem.theme.UIBorderGray
+import com.ramble.core.designsystem.theme.OffWhite
 
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
@@ -102,7 +103,7 @@ fun ExpenseScreen(
         )
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().background(OffWhite)) {
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp),
             contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp),

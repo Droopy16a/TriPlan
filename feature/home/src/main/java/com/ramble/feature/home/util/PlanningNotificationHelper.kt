@@ -6,14 +6,17 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.work.ForegroundInfo
+import com.ramble.core.designsystem.R as DesignR
 
 class PlanningNotificationHelper(private val context: Context) {
 
     companion object {
         private const val CHANNEL_ID = "trip_planning_channel"
-        private const val NOTIFICATION_ID = 1001
+        const val NOTIFICATION_ID = 1001
         const val ACTION_CANCEL = "com.ramble.ACTION_CANCEL_PLANNING"
     }
 
@@ -35,7 +38,43 @@ class PlanningNotificationHelper(private val context: Context) {
         }
     }
 
+    fun getForegroundInfo(message: String): ForegroundInfo {
+        val notification = createNotification(message, isOngoing = true, showProgress = true)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ForegroundInfo(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            ForegroundInfo(NOTIFICATION_ID, notification)
+        }
+    }
+
     fun showNotification(message: String) {
+        try {
+            NotificationManagerCompat.from(context).notify(
+                NOTIFICATION_ID, 
+                createNotification(message, isOngoing = true, showProgress = true)
+            )
+        } catch (e: SecurityException) {
+            // Permission not granted
+        }
+    }
+
+    fun showFinalNotification(title: String, message: String) {
+        try {
+            val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(DesignR.drawable.ic_stat_name)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setAutoCancel(true) // Dismiss when tapped
+                .setOngoing(false) // Can be swiped away
+
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build())
+        } catch (e: SecurityException) {
+            // Permission not granted
+        }
+    }
+
+    private fun createNotification(message: String, isOngoing: Boolean, showProgress: Boolean): android.app.Notification {
         val cancelIntent = Intent(ACTION_CANCEL).apply {
             setPackage(context.packageName)
         }
@@ -45,19 +84,21 @@ class PlanningNotificationHelper(private val context: Context) {
         )
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_today) // Fallback icon
+            .setSmallIcon(DesignR.drawable.ic_stat_name)
             .setContentTitle("Planning your trip")
             .setContentText(message)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
-            .setProgress(0, 0, true) // Indeterminate progress
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", cancelPendingIntent)
+            .setOngoing(isOngoing)
 
-        try {
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build())
-        } catch (e: SecurityException) {
-            // Permission not granted
+        if (showProgress) {
+            builder.setProgress(0, 0, true)
         }
+        
+        if (isOngoing) {
+            builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", cancelPendingIntent)
+        }
+
+        return builder.build()
     }
 
     fun dismissNotification() {

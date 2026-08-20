@@ -97,6 +97,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.layout.ContentScale
 import com.ramble.feature.home.component.HeroTripCard
 import com.ramble.feature.home.component.HeroTripCardSkeleton
 import com.ramble.feature.home.component.PopularTripCard
@@ -702,7 +705,7 @@ fun SearchBar(
                                         }
                                         showDatePicker = false
                                     },
-                                    colors = ButtonDefaults.textButtonColors(contentColor = BrandDarkGreen)
+                                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
                                 ) {
                                     Text("OK")
                                 }
@@ -747,7 +750,7 @@ fun SearchBar(
                                 },
                                 colors = DatePickerDefaults.colors(
                                     selectedDayContainerColor = DeepGraphite,
-                                    dayInSelectionRangeContainerColor = MintGreen.copy(alpha = 0.15f),
+                                    dayInSelectionRangeContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                                     selectedDayContentColor = Color.White,
                                     todayDateBorderColor = DeepGraphite,
                                     todayContentColor = DeepGraphite
@@ -1296,46 +1299,69 @@ fun NavIcon(
 fun OverlappingAvatars(
     initials: List<String>,
     extra: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    avatarUrls: List<String?> = emptyList()
 ) {
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy((-12).dp)
     ) {
-        initials.forEach { initial ->
+        initials.forEachIndexed { index, initial ->
+            val avatarUrl = avatarUrls.getOrNull(index)
             Box(
                 modifier = Modifier
                     .size(28.dp)
                     .clip(CircleShape)
-                    .background(DeepGraphite)
-                    .border(2.dp, Color.White, CircleShape),
+                    .background(DeepGraphite),
+                    //.border(2.dp, Color.White, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                if (avatarUrl != null) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(avatarUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Text(
+                        text = initial,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+        if (extra.isNotBlank()) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(DeepGraphite),
+                    //.border(2.dp, Color.White, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = initial,
+                    text = extra,
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White
                 )
             }
         }
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .clip(CircleShape)
-                .background(DeepGraphite)
-                .border(2.dp, Color.White, CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = extra,
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White
-            )
-        }
     }
 }
 
+private val markerBitmapCache = android.util.LruCache<String, Bitmap>(50)
+
 fun createMiniMapMarkerBitmap(context: android.content.Context, text: String): Bitmap {
+    val cached = markerBitmapCache.get(text)
+    if (cached != null && !cached.isRecycled) {
+        return cached
+    }
+
     val typeface = ResourcesCompat.getFont(context, com.ramble.core.designsystem.R.font.poppins_semibold)
 
     val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -1366,6 +1392,7 @@ fun createMiniMapMarkerBitmap(context: android.content.Context, text: String): B
     canvas.drawCircle(cx, cy, 9f, dotPaint)
     canvas.drawText(text, cx, cy - 28f, textPaint)
 
+    markerBitmapCache.put(text, bitmap)
     return bitmap
 }
 
@@ -1380,6 +1407,17 @@ fun ItineraryBottomSheetContent(
         "Food" to Color(0xFFFF6B35),
         "Activity" to Color(0xFF4ECDC4),
         "Transport" to Color(0xFF45B7D1),
+        "Shopping" to Color(0xFFFF9F1C),
+        "Nature" to Color(0xFF2EC4B6),
+        "Hiking" to Color(0xFF2EC4B6),
+        "Beach" to Color(0xFF00B4D8),
+        "Museum" to Color(0xFF6C63FF),
+        "Nightlife" to Color(0xFF9D4EDD),
+        "Cafe" to Color(0xFFBC6C25),
+        "Attractions" to Color(0xFFE63946),
+        "Viewpoint" to Color(0xFF1B4332),
+        "Entertainment" to Color(0xFFF72585),
+        "Accommodation" to Color(0xFF023E8A),
     )
 
     Column(

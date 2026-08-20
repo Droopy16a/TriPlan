@@ -40,6 +40,18 @@ import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.Terrain
+import androidx.compose.material.icons.filled.BeachAccess
+import androidx.compose.material.icons.filled.Museum
+import androidx.compose.material.icons.filled.Nightlife
+import androidx.compose.material.icons.filled.LocalCafe
+import androidx.compose.material.icons.filled.Attractions
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.TheaterComedy
+import androidx.compose.material.icons.filled.Hotel
+import androidx.compose.material.icons.filled.DirectionsBus
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
@@ -123,6 +135,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import com.ramble.core.ai.Expense
 import com.ramble.core.designsystem.theme.DeepGraphite
+import com.ramble.core.designsystem.theme.OffWhite
 import com.ramble.core.designsystem.theme.UIBackgroundGray
 import com.ramble.core.designsystem.theme.BrandLightGreen
 import com.ramble.core.designsystem.util.clickWithDelay
@@ -158,7 +171,7 @@ fun TripWorkspaceScreen(
     
     // Set padding to 75% of screen height to force the "center" into the top quarter
     val bottomPaddingPx = remember(density, config) { 
-        with(density) { (config.screenHeightDp * 0.75f).dp.roundToPx() } 
+        with(density) { (config.screenHeightDp * 0.75f).dp.roundToPx() }
     }
     val boundsPaddingPx = remember(density) { with(density) { 40.dp.roundToPx() } }
 
@@ -443,7 +456,7 @@ fun TripWorkspaceScreen(
             )
 
             if (!isMapVisible) {
-                Box(modifier = Modifier.fillMaxSize().background(Color.White))
+                Box(modifier = Modifier.fillMaxSize().background(OffWhite))
             }
 
             AnimatedVisibility(
@@ -1122,20 +1135,51 @@ fun ItineraryView(
                         Spacer(modifier = Modifier.height(8.dp))
                     }
 
+                    val categoryColors = mapOf(
+                        "Food" to Color(0xFFFF6B35),
+                        "Activity" to Color(0xFF4ECDC4),
+                        "Transport" to Color(0xFF45B7D1),
+                        "Shopping" to Color(0xFFFF9F1C),
+                        "Nature" to Color(0xFF2EC4B6),
+                        "Hiking" to Color(0xFF2EC4B6),
+                        "Beach" to Color(0xFF00B4D8),
+                        "Museum" to Color(0xFF6C63FF),
+                        "Nightlife" to Color(0xFF9D4EDD),
+                        "Cafe" to Color(0xFFBC6C25),
+                        "Attractions" to Color(0xFFE63946),
+                        "Viewpoint" to Color(0xFF1B4332),
+                        "Entertainment" to Color(0xFFF72585),
+                        "Accommodation" to Color(0xFF023E8A),
+                    )
+
                     day.steps.forEachIndexed { index, step ->
                         item {
                             val icon = when (step.category) {
                                 "Flight" -> Icons.Default.FlightTakeoff
                                 "Transport" -> Icons.Default.DirectionsTransit
+                                "Bus" -> Icons.Default.DirectionsBus
+                                "Car" -> Icons.Default.DirectionsCar
                                 "Food" -> Icons.Default.Restaurant
+                                "Cafe" -> Icons.Default.LocalCafe
+                                "Shopping" -> Icons.Default.ShoppingBag
+                                "Nature", "Hiking" -> Icons.Default.Terrain
+                                "Beach" -> Icons.Default.BeachAccess
+                                "Museum" -> Icons.Default.Museum
+                                "Nightlife" -> Icons.Default.Nightlife
+                                "Attractions" -> Icons.Default.Attractions
+                                "Viewpoint" -> Icons.Default.Visibility
+                                "Entertainment" -> Icons.Default.TheaterComedy
+                                "Accommodation" -> Icons.Default.Hotel
                                 else -> Icons.Default.Place
                             }
+                            val iconColor = categoryColors[step.category] ?: Color.Black
                             Box(modifier = Modifier.padding(horizontal = 32.dp)) {
                                 TimelineItem(
                                     icon = icon, text = step.title, time = step.time,
                                     description = step.description, price = step.estimatedCost,
                                     lat = step.lat, lon = step.lon,
                                     geocodingProvider = geocodingProvider,
+                                    iconColor = iconColor,
                                     onClick = {
                                         val lat = step.lat
                                         val lon = step.lon
@@ -1248,13 +1292,14 @@ fun TimelineItem(
     lat: Double? = null,
     lon: Double? = null,
     geocodingProvider: GeocodingProvider? = null,
+    iconColor: Color = Color.Black,
     onClick: () -> Unit = {},
     onAddToExpenses: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     Row(modifier = Modifier.fillMaxWidth().clickable { clickWithDelay(scope, onClick = onClick) }.padding(vertical = 8.dp), verticalAlignment = Alignment.Top) {
-        Icon(icon, contentDescription = null, tint = Color.Black, modifier = Modifier.size(28.dp).padding(top = 4.dp))
+        Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(28.dp).padding(top = 4.dp))
         Spacer(modifier = Modifier.width(24.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(text = text, style = MaterialTheme.typography.titleSmall, color = DeepGraphite)

@@ -10,47 +10,48 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val LightColors = lightColorScheme(
-    primary = BrandDarkGreen,
-    onPrimary = OffWhite,
-    primaryContainer = BrandLightGreen,
-    onPrimaryContainer = DeepGraphite,
-    secondary = EmeraldGreen,
-    onSecondary = OffWhite,
-    tertiary = SkyBlue,
-    onTertiary = DeepGraphite,
-    background = OffWhite,
-    onBackground = DeepGraphite,
-    surface = CardBackground,
-    onSurface = DeepGraphite,
-    surfaceVariant = SurfaceGray,
-    onSurfaceVariant = DeepGraphite,
-    error = BrandDarkGreen,
-    onError = OffWhite
+    primary = RambleGreen,
+    onPrimary = Color.White,
+    primaryContainer = RambleGreen.copy(alpha = 0.12f),
+    onPrimaryContainer = RambleGreenDark,
+    secondary = RambleGreenDark,
+    onSecondary = Color.White,
+    tertiary = RambleNavy,
+    onTertiary = RambleLight,
+    background = RambleLight,
+    onBackground = RambleNavy,
+    surface = Color.White,
+    onSurface = RambleNavy,
+    surfaceVariant = RambleLight,
+    onSurfaceVariant = RambleNavy,
+    error = Color(0xFFB00020),
+    onError = Color.White
 )
 
 private val DarkColors = darkColorScheme(
-    primary = BrandDarkGreen,
-    onPrimary = OffWhite,
-    primaryContainer = BrandDarkGreen,
-    onPrimaryContainer = OffWhite,
-    secondary = EmeraldGreen,
-    onSecondary = OffWhite,
-    tertiary = SkyBlue,
-    onTertiary = DarkText,
-    background = DarkBackground,
-    onBackground = DarkText,
-    surface = DarkSurface,
-    onSurface = DarkText,
-    surfaceVariant = DeepGraphite,
-    onSurfaceVariant = DarkText,
-    error = BrandDarkGreen,
-    onError = OffWhite
+    primary = RambleGreen,
+    onPrimary = RambleNavy,
+    primaryContainer = RambleGreenDark,
+    onPrimaryContainer = RambleLight,
+    secondary = RambleGreenDark,
+    onSecondary = RambleNavy,
+    tertiary = RambleLight,
+    onTertiary = RambleNavy,
+    background = RambleNavy,
+    onBackground = RambleLight,
+    surface = RambleNavy,
+    onSurface = RambleLight,
+    surfaceVariant = Color(0xFF1E293B),
+    onSurfaceVariant = RambleLight,
+    error = Color(0xFFCF6679),
+    onError = RambleNavy
 )
 
 @Composable

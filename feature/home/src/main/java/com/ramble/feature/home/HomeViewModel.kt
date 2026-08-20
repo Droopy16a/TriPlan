@@ -12,6 +12,15 @@ import com.ramble.core.location.LocationService
 import com.ramble.core.location.Properties
 import com.ramble.feature.home.util.PlanningNotificationHelper
 import com.ramble.feature.home.util.PlanningSignal
+import com.ramble.feature.home.util.emojiForDestination
+import com.ramble.feature.home.worker.TripPlannerWorker
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -98,7 +107,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CommunityTripRepository.communityTrips.value)
 
+    private val prefs = getApplication<Application>().getSharedPreferences("search_form_draft_prefs", android.content.Context.MODE_PRIVATE)
+
     init {
+        // Load draft search form state
+        _destinationQuery.value = prefs.getString("draft_destination", "") ?: ""
+        _departureQuery.value = prefs.getString("draft_departure", "") ?: ""
+        _travelers.value = prefs.getString("draft_travelers", "") ?: ""
+        _budget.value = prefs.getString("draft_budget", "") ?: ""
+        _preferences.value = prefs.getString("draft_preferences", "") ?: ""
+        _startDate.value = prefs.getString("draft_start_date", null)?.let { try { LocalDate.parse(it) } catch(e: Exception) { null } }
+        _endDate.value = prefs.getString("draft_end_date", null)?.let { try { LocalDate.parse(it) } catch(e: Exception) { null } }
+
         viewModelScope.launch {
             PlanningSignal.cancelSignal.collectLatest {
                 cancelGeneration()
@@ -117,6 +137,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateDestinationQuery(query: String, triggerSuggestions: Boolean = true) {
         _destinationQuery.value = query
+        prefs.edit().putString("draft_destination", query).apply()
         if (triggerSuggestions) {
             updateDestinationSuggestions(query)
         } else {
@@ -131,6 +152,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateDepartureQuery(query: String, triggerSuggestions: Boolean = true) {
         _departureQuery.value = query
+        prefs.edit().putString("draft_departure", query).apply()
         if (triggerSuggestions) {
             updateDepartureSuggestions(query)
         } else {
@@ -142,37 +164,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun updateDateRange(start: LocalDate?, end: LocalDate?) {
         _startDate.value = start
         _endDate.value = end
+        prefs.edit()
+            .putString("draft_start_date", start?.toString())
+            .putString("draft_end_date", end?.toString())
+            .apply()
     }
 
     fun updateTravelers(value: String) {
         _travelers.value = value
+        prefs.edit().putString("draft_travelers", value).apply()
     }
 
     fun updateBudget(value: String) {
         _budget.value = value
+        prefs.edit().putString("draft_budget", value).apply()
     }
 
     fun updatePreferences(value: String) {
         _preferences.value = value
+        prefs.edit().putString("draft_preferences", value).apply()
     }
 
     fun setSearchFormExpanded(expanded: Boolean) {
         _isSearchFormExpanded.value = expanded
-    }
-
-    private fun emojiForDestination(destination: String): String {
-        val lower = destination.lowercase()
-        return when {
-            lower.contains("japan") || lower.contains("tokyo") || lower.contains("kyoto") -> "⛩️"
-            lower.contains("paris") || lower.contains("france") -> "🗼"
-            lower.contains("new york") || lower.contains("usa") || lower.contains("america") -> "🗽"
-            lower.contains("london") || lower.contains("uk") || lower.contains("england") -> "🎡"
-            lower.contains("rome") || lower.contains("italy") -> "🏛️"
-            lower.contains("barcelona") || lower.contains("spain") -> "💃"
-            lower.contains("dubai") -> "🏙️"
-            lower.contains("bali") || lower.contains("indonesia") -> "🌴"
-            else -> "✈️"
-        }
     }
 
     fun generateTrip(
@@ -187,9 +201,26 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         generationJob?.cancel()
         generationJob = viewModelScope.launch {
             _generationState.value = TripGenerationState.Loading("Planning your trip…")
-            notificationHelper.showNotification("Planning your trip…")
 
-            // Start loading sequence
+            val inputData = workDataOf(
+                "departure" to departure,
+                "destination" to destination,
+                "startDate" to startDate?.toString(),
+                "endDate" to endDate?.toString(),
+                "travelers" to travelers,
+                "budget" to budget,
+                "preferences" to preferences
+            )
+
+            val workRequest = OneTimeWorkRequestBuilder<TripPlannerWorker>()
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setInputData(inputData)
+                .build()
+
+            WorkManager.getInstance(getApplication())
+                .enqueueUniqueWork("trip_generation", ExistingWorkPolicy.REPLACE, workRequest)
+
+            // Start loading sequence for UI
             val loadingJob = launch {
                 val sequence = listOf(
                     { LoadingMessages.getRandom(LoadingMessages.tripPlanning) },
@@ -213,55 +244,42 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         LoadingMessages.getRandom(LoadingMessages.playful)
                     }
                     _generationState.value = TripGenerationState.Loading(msg)
-                    notificationHelper.showNotification(msg)
                     delay(2800)
                     if (index < sequence.size) index++
                 }
             }
 
-            val result = aiService.generateTrip(departure, destination, startDate, endDate, travelers, budget, preferences)
-            loadingJob.cancel()
-            notificationHelper.dismissNotification()
-
-            if (result.isSuccess) {
-                val itinerary = result.getOrThrow()
-                
-                // Duration calculation in Kotlin for UI display
-                val durationText = if (startDate != null && endDate != null) {
-                    val days = java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate).toInt() + 1
-                    val formatter = DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
-                    "${startDate.format(formatter)} – ${endDate.format(formatter)} ($days days)"
-                } else {
-                    "flexible"
+            // Observe the work status
+            WorkManager.getInstance(getApplication())
+                .getWorkInfoByIdFlow(workRequest.id)
+                .collect { workInfo ->
+                    when (workInfo?.state) {
+                        WorkInfo.State.SUCCEEDED -> {
+                            loadingJob.cancel()
+                            val tripId = workInfo.outputData.getString("tripId")
+                            val trip = tripId?.let { id -> TripRepository.getById(id) }
+                            if (trip != null) {
+                                _generationState.value = TripGenerationState.Success(trip)
+                            }
+                        }
+                        WorkInfo.State.FAILED -> {
+                            loadingJob.cancel()
+                            _generationState.value = TripGenerationState.Error("Failed to generate trip. Please check your connection.")
+                        }
+                        WorkInfo.State.CANCELLED -> {
+                            loadingJob.cancel()
+                            _generationState.value = TripGenerationState.Cancelled
+                        }
+                        else -> {}
+                    }
                 }
-
-                val cityName = destination.substringBefore(",").trim()
-                val year = startDate?.year ?: LocalDate.now().year
-                val defaultTitle = "$cityName $year"
-
-                val trip = SavedTrip(
-                    id = UUID.randomUUID().toString(),
-                    title = defaultTitle,
-                    destination = itinerary.destination,
-                    dates = durationText,
-                    travelers = travelers,
-                    budget = budget,
-                    preferences = preferences,
-                    emoji = emojiForDestination(destination),
-                    itinerary = itinerary
-                )
-                TripRepository.save(trip)
-                _generationState.value = TripGenerationState.Success(trip)
-            } else {
-                val msg = result.exceptionOrNull()?.message ?: "Unknown error"
-                _generationState.value = TripGenerationState.Error(msg)
-            }
         }
     }
 
     fun cancelGeneration() {
         generationJob?.cancel()
         generationJob = null
+        WorkManager.getInstance(getApplication()).cancelUniqueWork("trip_generation")
         _generationState.value = TripGenerationState.Cancelled
         notificationHelper.dismissNotification()
     }

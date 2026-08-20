@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Ramble</string>
+    <string name="widget_description">Shows your next upcoming trip</string>
 </resources>

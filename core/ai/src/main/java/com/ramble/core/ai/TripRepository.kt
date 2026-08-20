@@ -1,6 +1,7 @@
 package com.ramble.core.ai
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Transient
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -110,6 +111,7 @@ private data class UserProfileUpsert(
 object TripRepository {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val supabase = SupabaseClient.client
+    @Volatile private var appContext: android.content.Context? = null
     
     private val _trips = MutableStateFlow<List<SavedTrip>>(emptyList())
     val trips: StateFlow<List<SavedTrip>> = _trips.asStateFlow()
@@ -119,11 +121,56 @@ object TripRepository {
     val tripMemberProfiles: StateFlow<Map<String, List<TripMemberProfile>>> = _tripMemberProfiles.asStateFlow()
     private val placeholderRegex = Regex("^member\\s+\\d+$", RegexOption.IGNORE_CASE)
 
+    // TTL Cache for Trip Member Profiles (10 minutes TTL)
+    private val profileCache = java.util.concurrent.ConcurrentHashMap<String, Pair<UserProfileRow?, Long>>()
+    private val PROFILE_TTL_MS = 10 * 60 * 1000L
+
+    fun initContext(context: android.content.Context) {
+        if (appContext == null) {
+            appContext = context.applicationContext
+            loadFromDiskCache()
+        }
+    }
+
+    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    private fun loadFromDiskCache() {
+        val ctx = appContext ?: return
+        try {
+            val file = java.io.File(ctx.filesDir, "saved_trips_cache.json")
+            if (file.exists()) {
+                val jsonStr = file.readText()
+                if (jsonStr.isNotBlank()) {
+                    val cached = json.decodeFromString<List<SavedTrip>>(jsonStr)
+                    if (cached.isNotEmpty() && _trips.value.isEmpty()) {
+                        _trips.value = cached
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("TripRepository", "Error loading disk cache", e)
+        }
+    }
+
+    private fun saveToDiskCache(trips: List<SavedTrip>) {
+        val ctx = appContext ?: return
+        scope.launch(Dispatchers.IO) {
+            try {
+                val file = java.io.File(ctx.filesDir, "saved_trips_cache.json")
+                val jsonStr = json.encodeToString(trips)
+                file.writeText(jsonStr)
+            } catch (e: Exception) {
+                Log.e("TripRepository", "Error saving disk cache", e)
+            }
+        }
+    }
+
     init {
         // Listen to auth state to load/clear trips
         scope.launch {
             AuthRepository.authState.collectLatest { state ->
                 if (state is AuthState.Authenticated) {
+                    loadFromDiskCache()
                     loadTrips()
                 } else {
                     _trips.value = emptyList()
@@ -166,6 +213,7 @@ object TripRepository {
 
             val result = (ownedTrips + joinedTrips).distinctBy { it.id }
             _trips.value = result
+            saveToDiskCache(result)
             loadMembersForTrips(result.map { it.id })
         } catch (e: Exception) {
             e.printStackTrace()
@@ -211,39 +259,76 @@ private data class TripUpdate(
         )
 
         _trips.update { currentTrips ->
-            listOf(tripWithUser) + currentTrips.filterNot { it.id == tripWithUser.id }
+            val updated = listOf(tripWithUser) + currentTrips.filterNot { it.id == tripWithUser.id }
+            saveToDiskCache(updated)
+            updated
         }
         
         scope.launch {
-            try {
-                // If we are not the owner, use update instead of upsert to avoid violating INSERT RLS policies
-                if (trip.userId != null && trip.userId != authState.userId) {
-                    val updateData = TripUpdate(
-                        title = tripWithUser.title,
-                        destination = tripWithUser.destination,
-                        dates = tripWithUser.dates,
-                        travelers = tripWithUser.travelers,
-                        budget = tripWithUser.budget,
-                        preferences = tripWithUser.preferences,
-                        emoji = tripWithUser.emoji,
-                        imageUrl = tripWithUser.imageUrl,
-                        itinerary = tripWithUser.itinerary,
-                        expenses = tripWithUser.expenses
-                    )
-                    supabase.postgrest["trips"].update(updateData) {
-                        filter {
-                            eq("id", tripWithUser.id)
-                        }
+            saveToRemote(tripWithUser, authState)
+        }
+    }
+
+    suspend fun saveSuspend(trip: SavedTrip) {
+        val authState = AuthRepository.authState.value
+        if (authState !is AuthState.Authenticated) return
+        val currentUserName = currentUserDisplayName(authState)
+        val memberNames = buildDisplayMembers(
+            existingMembers = trip.memberNames.orEmpty(),
+            travelers = trip.travelers,
+            currentUserName = currentUserName,
+            includeCurrentUser = true
+        )
+        
+        val tripWithUser = trip.copy(
+            userId = trip.userId ?: authState.userId,
+            memberNames = memberNames,
+            memberAvatarUrls = mergeMemberAvatarUrls(
+                existingAvatarUrls = trip.memberAvatarUrls.orEmpty(),
+                memberNames = memberNames,
+                currentUserName = currentUserName,
+                currentUserAvatarUrl = authState.avatarUrl
+            )
+        )
+
+        _trips.update { currentTrips ->
+            val updated = listOf(tripWithUser) + currentTrips.filterNot { it.id == tripWithUser.id }
+            saveToDiskCache(updated)
+            updated
+        }
+        
+        saveToRemote(tripWithUser, authState)
+    }
+
+    private suspend fun saveToRemote(tripWithUser: SavedTrip, authState: AuthState.Authenticated) {
+        try {
+            // If we are not the owner, use update instead of upsert to avoid violating INSERT RLS policies
+            if (tripWithUser.userId != null && tripWithUser.userId != authState.userId) {
+                val updateData = TripUpdate(
+                    title = tripWithUser.title,
+                    destination = tripWithUser.destination,
+                    dates = tripWithUser.dates,
+                    travelers = tripWithUser.travelers,
+                    budget = tripWithUser.budget,
+                    preferences = tripWithUser.preferences,
+                    emoji = tripWithUser.emoji,
+                    imageUrl = tripWithUser.imageUrl,
+                    itinerary = tripWithUser.itinerary,
+                    expenses = tripWithUser.expenses
+                )
+                supabase.postgrest["trips"].update(updateData) {
+                    filter {
+                        eq("id", tripWithUser.id)
                     }
-                } else {
-                    supabase.postgrest["trips"].upsert(tripWithUser)
                 }
-                ensureTripMember(trip.id, authState)
-                loadTrips()
-            } catch (e: Exception) {
-                Log.e("TripRepository", "Failed to save trip ${trip.id}", e)
-                e.printStackTrace()
+            } else {
+                supabase.postgrest["trips"].upsert(tripWithUser)
             }
+            ensureTripMember(tripWithUser.id, authState)
+            loadTrips()
+        } catch (e: Exception) {
+            Log.e("TripRepository", "Failed to save trip ${tripWithUser.id}", e)
+            e.printStackTrace()
         }
     }
 
@@ -300,6 +385,27 @@ private data class TripUpdate(
     }
 
     fun getById(id: String): SavedTrip? = _trips.value.find { it.id == id }
+
+    fun getNextTrip(): SavedTrip? {
+        val now = java.time.LocalDate.now()
+        return _trips.value
+            .filter { trip ->
+                val startDateStr = trip.itinerary?.days?.firstOrNull()?.date
+                if (startDateStr == null) false
+                else {
+                    try {
+                        val startDate = java.time.LocalDate.parse(startDateStr)
+                        !startDate.isBefore(now)
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+            }
+            .minByOrNull { trip ->
+                val startDateStr = trip.itinerary?.days?.firstOrNull()?.date!!
+                java.time.LocalDate.parse(startDateStr).toEpochDay()
+            }
+    }
 
     suspend fun fetchTripDirectly(tripId: String): SavedTrip? {
         return try {
@@ -487,18 +593,34 @@ private data class TripUpdate(
             .map { it.userId }
             .distinct()
 
-        val profilesById = profileIds.associateWith { userId ->
+        val now = System.currentTimeMillis()
+        val profileIdsToFetch = profileIds.filter { userId ->
+            val cached = profileCache[userId]
+            cached == null || (now - cached.second) > PROFILE_TTL_MS
+        }
+
+        val newlyFetchedProfiles = profileIdsToFetch.associateWith { userId ->
             try {
-                supabase.postgrest["profiles"]
+                val profile = supabase.postgrest["profiles"]
                     .select {
                         filter {
                             eq("id", userId)
                         }
                     }
                     .decodeSingleOrNull<UserProfileRow>()
+                profileCache[userId] = Pair(profile, now)
+                profile
             } catch (e: Exception) {
                 Log.e("TripRepository", "Failed to load profile $userId", e)
                 null
+            }
+        }
+
+        val profilesById = profileIds.associateWith { userId ->
+            if (profileCache.containsKey(userId)) {
+                profileCache[userId]?.first
+            } else {
+                newlyFetchedProfiles[userId]
             }
         }
 

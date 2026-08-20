@@ -66,6 +66,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.example.ramble.widget.WidgetUpdater.init(this)
+        TripRepository.initContext(this)
         handleIntent(intent)
 
         val imageLoader = ImageLoader.Builder(this)
@@ -101,7 +103,7 @@ class MainActivity : ComponentActivity() {
                 when (authState) {
                     is AuthState.Loading -> {
                         // Splash / loading
-                        Box(modifier = Modifier.fillMaxSize())
+                        Box(modifier = Modifier.fillMaxSize().background(com.ramble.core.designsystem.theme.OffWhite))
                     }
 
                     is AuthState.Unauthenticated -> {

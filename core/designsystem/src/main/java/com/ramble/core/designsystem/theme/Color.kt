@@ -2,41 +2,38 @@ package com.ramble.core.designsystem.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Premium Travel Red
-val TravelRed = Color(0xFFE63946)
-val TravelRedDark = Color(0xFFC1121F)
+// New Branding Palette
+val RambleGreen = Color(0xFF16C47F)
+val RambleGreenDark = Color(0xFF0FA36B)
+val RambleNavy = Color(0xFF2B2D42)
+val RambleLight = Color(0xFFF2F4F7)
 
-// Accents
-val WarmCoral = Color(0xFF3A86FF)   // Bleu océan
-val SoftPeach = Color(0xFFFFE5E8)   // Rose très clair
-val WarmSand = Color(0xFFFFA303)    // Jaune soleil
+// Legacy Mappings (updated to match new palette)
+val DeepGraphite = RambleNavy
+val OffWhite = RambleLight
+val CardBackground = Color.White
+val UIBackgroundGray = Color(0xFFF9FAFB)
+val UIBorderGray = Color(0xFFE5E7EB)
+val SurfaceGray = Color(0xFFF3F4F6)
+val LightGray = Color(0xFFD1D5DB)
 
-// Neutrals
-val OffWhite = Color(0xFFFCFCFD) // Updated for better card relief
-val CardBackground = Color(0xFFFFFDFD)
-val DeepGraphite = Color(0xFF2B2D42)
-val LightGray = Color(0xFFE5E5E5)
-val SurfaceGray = Color(0xFFF0F0F0)
-
-// Designer Additions
-val LightRedBackground = Color(0xFFFFE5E8)
-val WarningBackground = Color(0xFFFFD6E2)
-val WarningText = Color(0xFFC50038)
-
-// UI 2.0 Colors
-val BrandLightGreen = Color(0xFFC8E6C9)
-val BrandDarkGreen = Color(0xFF2E7D32)
-val UIBackgroundGray = Color(0xFFEEEEEE)
-val UIBorderGray = Color(0xFFE0E0E0)
-val SkyBlueLight = Color(0xFFB3E5FC)
-val WaterBlue = Color(0xFFE8F1F2)
-val MintGreen = Color(0xFFAED581)
-
-// Semantic
-val EmeraldGreen = Color(0xFF343434)
-val SkyBlue = Color(0xFF3A86FF)
+val BrandDarkGreen = RambleGreenDark
+val BrandLightGreen = RambleGreen
+val SkyBlue = RambleGreen // Map sky blue to green for consistency
+val SkyBlueLight = RambleGreen.copy(alpha = 0.1f)
+val EmeraldGreen = RambleGreenDark
 
 // Dark Theme specific
-val DarkBackground = Color(0xFF0F172A)
+val DarkBackground = RambleNavy
 val DarkSurface = Color(0xFF1E293B)
 val DarkText = Color(0xFFF8FAFC)
+
+// Functional Colors
+val ErrorRed = Color(0xFFE63946)
+val WarningYellow = Color(0xFFFFA303)
+
+// Deprecated (to be removed)
+@Deprecated("Use RambleGreen or MaterialTheme.colorScheme.primary")
+val TravelRed = ErrorRed
+@Deprecated("Use RambleGreenDark")
+val TravelRedDark = Color(0xFFC1121F)

@@ -39,6 +39,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.ramble.core.ai.SavedTrip
+import com.ramble.core.ai.TripRepository
 import com.ramble.core.designsystem.theme.*
 import com.ramble.core.designsystem.util.clickWithDelay
 import com.ramble.core.designsystem.util.parseCurrency
@@ -146,7 +147,6 @@ fun HeroTripCard(
         "$cityName $year"
     }
     val displayDates  = savedTrip.dates
-    val isAiGenerated = true
 
     val daysLeft = remember(savedTrip) {
         val startDate = savedTrip.itinerary?.days?.firstOrNull()?.date?.let {
@@ -341,20 +341,24 @@ fun HeroTripCard(
                         )
                         Text(
                             displayDates ?: "", 
-                            style = MaterialTheme.typography.bodyLarge, 
+                            style = MaterialTheme.typography.bodyMedium,
                             color = Color.Gray
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         
-                        if (isAiGenerated) {
-                            Text(
-                                "✦ ${savedTrip.travelers} travelers · ${savedTrip.budget}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.Gray
-                            )
-                        } else {
-                            OverlappingAvatars(initials = listOf("A", "B", "C"), extra = "+1")
-                        }
+                        val memberNames = TripRepository.membersForTrip(savedTrip)
+                        val avatarMap = TripRepository.memberAvatarUrlsForTrip(savedTrip)
+                        
+                        val initials = memberNames.take(3).map { it.firstOrNull()?.toString()?.uppercase() ?: "?" }
+                        val avatarUrls = memberNames.take(3).map { avatarMap[it] }
+                        val extraCount = memberNames.size - 3
+                        val extraText = if (extraCount > 0) "+$extraCount" else ""
+
+                        OverlappingAvatars(
+                            initials = initials,
+                            avatarUrls = avatarUrls,
+                            extra = extraText
+                        )
                     }
                 }
 
@@ -533,7 +537,7 @@ fun PopularTripCard(
                 .width(160.dp)
                 .height(180.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(SkyBlueLight),
+                .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center
         ) {
             val imageUrl = trip?.imageUrl

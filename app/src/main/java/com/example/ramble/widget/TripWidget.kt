@@ -19,19 +19,14 @@ import androidx.glance.background
 import androidx.glance.appwidget.cornerRadius
 import com.ramble.core.ai.TripRepository
 import com.ramble.core.ai.SavedTrip
-import androidx.glance.ColorFilter
-import androidx.glance.Image
-import androidx.glance.ImageProvider
 import com.example.ramble.R
 
 class TripWidget : GlanceAppWidget() {
 
-    override suspend fun provideContent(context: Context, id: GlanceId) {
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
         provideContent {
             GlanceTheme {
-                val trips by TripRepository.trips.collectAsState()
                 val nextTrip = TripRepository.getNextTrip()
-
                 TripWidgetContent(nextTrip)
             }
         }
@@ -42,7 +37,7 @@ class TripWidget : GlanceAppWidget() {
         Column(
             modifier = GlanceModifier
                 .fillMaxSize()
-                .background(GlanceTheme.colors.background)
+                .background(GlanceTheme.colors.surface)
                 .padding(16.dp)
                 .cornerRadius(28.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -54,7 +49,7 @@ class TripWidget : GlanceAppWidget() {
                     style = TextStyle(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium,
-                        color = GlanceTheme.colors.onBackground
+                        color = GlanceTheme.colors.onSurface
                     )
                 )
             } else {
@@ -65,7 +60,7 @@ class TripWidget : GlanceAppWidget() {
                     Box(
                         modifier = GlanceModifier
                             .size(48.dp)
-                            .background(ColorProvider(androidx.compose.ui.graphics.Color(0xFF1A1C1E)))
+                            .background(GlanceTheme.colors.primary)
                             .cornerRadius(12.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -81,14 +76,14 @@ class TripWidget : GlanceAppWidget() {
                             style = TextStyle(
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = GlanceTheme.colors.onBackground
+                                color = GlanceTheme.colors.onSurface
                             )
                         )
                         Text(
                             text = trip.dates ?: "",
                             style = TextStyle(
                                 fontSize = 14.sp,
-                                color = GlanceTheme.colors.onBackground
+                                color = GlanceTheme.colors.onSurfaceVariant
                             )
                         )
                     }
@@ -96,11 +91,11 @@ class TripWidget : GlanceAppWidget() {
                 
                 Spacer(modifier = GlanceModifier.height(16.dp))
                 
-                val daysLeft = trip.itinerary?.days?.firstOrNull()?.date?.let {
+                val daysLeft = trip.itinerary?.days?.firstOrNull()?.date?.let { dateStr ->
                     try {
-                        val startDate = java.time.LocalDate.parse(it)
+                        val startDate = java.time.LocalDate.parse(dateStr)
                         java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.now(), startDate)
-                    } catch (e: Exception) { null }
+                    } catch (_: Exception) { null }
                 }
 
                 if (daysLeft != null) {

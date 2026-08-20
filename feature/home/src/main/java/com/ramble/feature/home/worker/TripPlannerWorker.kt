@@ -9,6 +9,7 @@ import com.ramble.core.ai.SavedTrip
 import com.ramble.core.ai.TripRepository
 import com.ramble.feature.home.util.PlanningNotificationHelper
 import com.ramble.feature.home.util.emojiForDestination
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -21,7 +22,7 @@ class TripPlannerWorker(
     workerParams: WorkerParameters
 ) : CoroutineWorker(context, workerParams) {
 
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = coroutineScope {
         val departure = inputData.getString("departure") ?: ""
         val destination = inputData.getString("destination") ?: ""
         val startDateStr = inputData.getString("startDate")
@@ -36,7 +37,13 @@ class TripPlannerWorker(
         val aiService = AiPlannerService(applicationContext)
         val notificationHelper = PlanningNotificationHelper(applicationContext)
 
-        notificationHelper.showNotification("Planning your trip to $destination…")
+        // Make this worker a foreground service so the notification stays alive 
+        // even if the user swipes away the app.
+        try {
+            setForeground(notificationHelper.getForegroundInfo("Planning your trip to $destination…"))
+        } catch (e: Exception) {
+            // Log or ignore if background start is restricted
+        }
 
         // Update notification periodically to show progress
         val progressJob = launch {
@@ -55,7 +62,7 @@ class TripPlannerWorker(
             }
         }
 
-        return try {
+        try {
             val result = aiService.generateTrip(departure, destination, startDate, endDate, travelers, budget, preferences)
             progressJob.cancel()
             
@@ -86,16 +93,29 @@ class TripPlannerWorker(
                     itinerary = itinerary
                 )
                 
-                TripRepository.save(trip)
-                notificationHelper.dismissNotification()
+                TripRepository.saveSuspend(trip)
+                notificationHelper.showFinalNotification(
+                    title = "Trip ready ✨",
+                    message = "Your adventure to $cityName is all set!"
+                )
                 Result.success(workDataOf("tripId" to trip.id))
             } else {
-                notificationHelper.dismissNotification()
+                notificationHelper.showFinalNotification(
+                    title = "Planning Failed",
+                    message = "We couldn't generate your trip to $destination. Please try again."
+                )
                 Result.failure()
             }
         } catch (e: Exception) {
             progressJob.cancel()
-            notificationHelper.dismissNotification()
+            if (e !is kotlinx.coroutines.CancellationException) {
+                notificationHelper.showFinalNotification(
+                    title = "Planning Error",
+                    message = "An unexpected error occurred while planning your trip."
+                )
+            } else {
+                notificationHelper.dismissNotification()
+            }
             Result.failure()
         }
     }

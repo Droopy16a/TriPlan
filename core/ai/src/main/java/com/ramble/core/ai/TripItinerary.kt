@@ -35,7 +35,7 @@ data class TripStep(
     val time: String,
     val title: String,
     val description: String,
-    val category: String, // e.g. "Food", "Activity", "Transport", "FreeTime", "Accommodation"
+    val category: String, // e.g. "Food", "Activity", "Transport", "FreeTime", "Accommodation", "Shopping", "Nature", "Hiking", "Beach", "Museum", "Nightlife", "Cafe", "Attractions", "Viewpoint", "Entertainment"
     val estimatedCost: Double? = null,
     val lat: Double? = null,
     val lon: Double? = null

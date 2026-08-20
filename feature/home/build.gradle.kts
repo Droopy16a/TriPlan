@@ -34,6 +34,9 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.androidx.compose.material.icons.extended)
 
+    // WorkManager for background trip generation
+    implementation(libs.androidx.work.runtime.ktx)
+
     // Live mini-map in HeroTripCard
     implementation(libs.maplibre)
 
