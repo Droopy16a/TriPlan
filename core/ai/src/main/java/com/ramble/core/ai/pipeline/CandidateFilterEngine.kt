@@ -6,12 +6,18 @@ import kotlin.math.abs
 class CandidateFilterEngine {
 
     fun filterAndRank(rawPois: List<POI>, limit: Int = 20, adhocPreferences: String? = null): List<POI> {
-        val profile = com.ramble.core.ai.ProfileRepository.profile.value
+        val profile = try { com.ramble.core.ai.ProfileRepository.profile.value } catch (_: Throwable) { com.ramble.core.ai.UserProfile() }
         val interests = (profile.interests + (adhocPreferences?.let { parseInterests(it) } ?: emptyList())).map { it.lowercase() }.distinct()
         val foodPrefs = (profile.foodPreferences + (adhocPreferences?.let { parseFoodPrefs(it) } ?: emptyList())).map { it.lowercase() }.distinct()
         
+        // 0. Exclude pure lodging accommodations from general POI candidates
+        val nonAccommodationPois = rawPois.filter { poi ->
+            !com.ramble.core.ai.TripItineraryValidator.isPureLodging(poi) &&
+            !isAccommodationName(poi.name)
+        }
+
         // 1. Deduplicate (by name and close proximity)
-        val deduplicated = deduplicate(rawPois)
+        val deduplicated = deduplicate(nonAccommodationPois)
 
         // 2. Rank
         val ranked = deduplicated.map { poi ->
@@ -24,34 +30,41 @@ class CandidateFilterEngine {
             if (!poi.cuisine.isNullOrBlank()) score += 1.0
             if (!poi.priceLevel.isNullOrBlank()) score += 0.5
             
-            // Boost based on user profile interests
-            val categoryLower = poi.category.lowercase()
-            val nameLower = poi.name.lowercase()
-            
+            // Boost based on user profile interests matched against structured OSM category tags
+            val categoryTags = listOfNotNull(
+                poi.category.lowercase(),
+                poi.osmTags["tourism"]?.lowercase(),
+                poi.osmTags["amenity"]?.lowercase(),
+                poi.osmTags["leisure"]?.lowercase(),
+                poi.osmTags["shop"]?.lowercase(),
+                poi.osmTags["historic"]?.lowercase()
+            )
+
             val matchesInterest = interests.any { interest ->
                 val synonyms = when(interest) {
                     "nightlife" -> listOf("bar", "pub", "nightclub", "club", "casino", "lounge", "cabaret", "dance")
-                    "sports" -> listOf("stadium", "sports", "pitch", "golf", "arena", "fitness", "gym")
-                    "nature" -> listOf("park", "reserve", "beach", "forest", "water", "trail", "garden", "mountain", "hiking")
-                    "culture" -> listOf("museum", "gallery", "historic", "attraction", "monument", "artwork", "castle", "temple", "church", "cathedral", "theatre")
+                    "sports" -> listOf("stadium", "sports", "pitch", "golf", "arena", "fitness", "gym", "sports_centre")
+                    "nature" -> listOf("park", "reserve", "beach", "forest", "water", "trail", "garden", "mountain", "hiking", "nature_reserve", "viewpoint")
+                    "culture" -> listOf("museum", "gallery", "historic", "attraction", "monument", "artwork", "castle", "temple", "church", "cathedral", "theatre", "archaeological_site")
                     "shopping" -> listOf("shop", "mall", "boutique", "market", "supermarket", "clothes", "jewelry")
                     "food" -> listOf("restaurant", "cafe", "bakery", "fast_food", "deli", "bistro", "brasserie")
                     else -> listOf(interest)
                 }
                 
-                categoryLower.contains(interest) || nameLower.contains(interest) || 
-                synonyms.any { categoryLower.contains(it) || nameLower.contains(it) }
+                categoryTags.any { tag ->
+                    tag == interest || synonyms.any { syn -> tag.contains(syn) }
+                }
             }
             
             if (matchesInterest) {
                 score += 5.0
             }
 
-            // Direct check in adhocPreferences for any specific nightlife or other keywords if not captured by interests
+            // Direct check in adhocPreferences for any specific nightlife or other keywords matched against category tags
             if (adhocPreferences != null) {
                 val adhocLower = adhocPreferences.lowercase()
                 if (adhocLower.contains("nightlife") || adhocLower.contains("night club") || adhocLower.contains("party")) {
-                    if (categoryLower.contains("bar") || categoryLower.contains("pub") || categoryLower.contains("nightclub")) {
+                    if (categoryTags.any { tag -> tag.contains("bar") || tag.contains("pub") || tag.contains("nightclub") }) {
                         score += 3.0
                     }
                 }
@@ -59,7 +72,7 @@ class CandidateFilterEngine {
             
             // Boost based on user profile food preferences
             val cuisineLower = poi.cuisine?.lowercase() ?: ""
-            if (foodPrefs.any { cuisineLower.contains(it) || categoryLower.contains(it) || nameLower.contains(it) }) {
+            if (foodPrefs.any { pref -> cuisineLower.contains(pref) || categoryTags.any { tag -> tag.contains(pref) } }) {
                 score += 4.0
             }
             
@@ -82,6 +95,12 @@ class CandidateFilterEngine {
         return result.take(limit).sortedByDescending { it.relevanceScore }
     }
 
+    private fun isAccommodationName(name: String): Boolean {
+        val lower = name.lowercase()
+        val regex = Regex("""\b(hotel|hôtel|aparthotel|hostel|resort|motel|guesthouse|guest house|b&b|bed & breakfast|bed and breakfast|staycity|novotel|mercure|ibis|hilton|marriott|hyatt|radisson|sheraton|westin|crowne plaza|holiday inn|albergo|pensione|locanda|hostal|posada|riad|suites?)\b""", RegexOption.IGNORE_CASE)
+        return regex.containsMatchIn(lower)
+    }
+
     private fun parseInterests(prefs: String): List<String> {
         // Simple parsing of "Interests: Nightlife, Culture"
         val interestLine = prefs.lines().find { it.contains("Interests:", ignoreCase = true) } 
@@ -98,7 +117,7 @@ class CandidateFilterEngine {
     }
 
     fun filterAndRankAccommodation(rawAccommodation: List<POI>, limit: Int = 10, adhocPreferences: String? = null): List<POI> {
-        val profile = com.ramble.core.ai.ProfileRepository.profile.value
+        val profile = try { com.ramble.core.ai.ProfileRepository.profile.value } catch (_: Throwable) { com.ramble.core.ai.UserProfile() }
         val accPrefs = (profile.accommodationPreference + (adhocPreferences?.let { parseAccPrefs(it) } ?: emptyList())).map { it.lowercase() }.distinct()
         
         val deduplicated = deduplicate(rawAccommodation)
