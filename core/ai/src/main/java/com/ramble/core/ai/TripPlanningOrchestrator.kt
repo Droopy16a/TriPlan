@@ -48,7 +48,10 @@ class TripPlanningOrchestrator(private val aiService: AiPlannerService? = null) 
             Log.d("Orchestrator", "Generating chunk ${i + 1}/${chunks.size}: Days ${chunkDef.startDay} to ${chunkDef.endDay}")
             
             // Geographic focus: divide POIs if possible, but for now just pass relevant ones
-            // In a more advanced version, we could cluster POIs and assign clusters to chunks
+            // In a more advanced version, we could cluster POIs and assign clusters to chunks.
+            // SKELETON STAGE (Phase 4): Deterministic DaySkeletonGenerator will construct slot skeletons
+            // (e.g. Breakfast, Main Attraction, Lunch, Nightlife) before calling chunkPlanner.
+            // See DAY_SKELETON_ARCHITECTURE.md for technical details.
             val chunkPois = filteredPois // Simplified: passing all top POIs for now
             
             val chunkResult = chunkPlanner.planChunk(
