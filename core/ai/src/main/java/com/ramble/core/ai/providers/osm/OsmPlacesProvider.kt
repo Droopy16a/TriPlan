@@ -103,29 +103,37 @@ class OsmPlacesProvider(private val httpClient: HttpClient) : PlacesProvider {
         val elementType = element.type ?: "node"
         val poiId = "osm_${elementType}_${element.id}"
 
+        val tourismValue = element.tags["tourism"]
+        val buildingValue = element.tags["building"]
+
+        val detectedAccommodationType = when (tourismValue) {
+            "hotel" -> AccommodationType.HOTEL
+            "hostel" -> AccommodationType.HOSTEL
+            "guest_house" -> AccommodationType.GUEST_HOUSE
+            "bed_and_breakfast" -> AccommodationType.BED_AND_BREAKFAST
+            "apartment" -> AccommodationType.APARTMENT
+            "motel" -> AccommodationType.MOTEL
+            "resort" -> AccommodationType.RESORT
+            "chalet" -> AccommodationType.CHALET
+            "camp_site" -> AccommodationType.CAMPSITE
+            "caravan_site" -> AccommodationType.CARAVAN_SITE
+            "alpine_hut" -> AccommodationType.ALPINE_HUT
+            "wilderness_hut" -> AccommodationType.WILDERNESS_HUT
+            else -> if (buildingValue == "hotel" || buildingValue == "hostel") AccommodationType.HOTEL else null
+        }
+
+        val effectiveType = if (type == POIType.ACCOMMODATION || detectedAccommodationType != null) {
+            POIType.ACCOMMODATION
+        } else {
+            POIType.GENERAL
+        }
+
         var categoryName = "Other"
         var accommodationType: AccommodationType? = null
         
-        if (type == POIType.ACCOMMODATION) {
-            val tourismValue = element.tags["tourism"]
-            if (tourismValue != null) {
-                categoryName = "Accommodation"
-                accommodationType = when (tourismValue) {
-                    "hotel" -> AccommodationType.HOTEL
-                    "hostel" -> AccommodationType.HOSTEL
-                    "guest_house" -> AccommodationType.GUEST_HOUSE
-                    "bed_and_breakfast" -> AccommodationType.BED_AND_BREAKFAST
-                    "apartment" -> AccommodationType.APARTMENT
-                    "motel" -> AccommodationType.MOTEL
-                    "resort" -> AccommodationType.RESORT
-                    "chalet" -> AccommodationType.CHALET
-                    "camp_site" -> AccommodationType.CAMPSITE
-                    "caravan_site" -> AccommodationType.CARAVAN_SITE
-                    "alpine_hut" -> AccommodationType.ALPINE_HUT
-                    "wilderness_hut" -> AccommodationType.WILDERNESS_HUT
-                    else -> AccommodationType.OTHER
-                }
-            }
+        if (effectiveType == POIType.ACCOMMODATION) {
+            categoryName = "Accommodation"
+            accommodationType = detectedAccommodationType ?: AccommodationType.OTHER
         } else {
             categoryName = when {
                 element.tags.containsKey("amenity") -> element.tags["amenity"]
@@ -157,7 +165,7 @@ class OsmPlacesProvider(private val httpClient: HttpClient) : PlacesProvider {
             name = name,
             category = categoryName,
             coordinates = Coordinates(elementLat, elementLon),
-            type = type,
+            type = effectiveType,
             accommodationType = accommodationType,
             address = buildAddress(element.tags),
             openingHours = element.tags["opening_hours"],
@@ -168,7 +176,8 @@ class OsmPlacesProvider(private val httpClient: HttpClient) : PlacesProvider {
             stars = stars,
             rooms = rooms,
             beds = beds,
-            amenities = amenities
+            amenities = amenities,
+            osmTags = element.tags
         )
     }
 

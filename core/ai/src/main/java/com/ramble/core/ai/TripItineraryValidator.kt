@@ -14,7 +14,8 @@ object TripItineraryValidator {
     fun validateChunk(
         chunk: TripItinerary,
         expectedDayRange: IntRange,
-        expectedDates: List<LocalDate>
+        expectedDates: List<LocalDate>,
+        candidatePois: List<com.ramble.core.ai.models.POI> = emptyList()
     ): ValidationResult {
         val errors = mutableListOf<String>()
 
@@ -57,7 +58,8 @@ object TripItineraryValidator {
                 errors.add("Day ${day.dayNumber} has no steps")
             }
             
-            val activities = steps.filter { it.category.equals("Activity", ignoreCase = true) }
+            val activityCategories = setOf("Activity", "Shopping", "Nature", "Hiking", "Beach", "Museum", "Nightlife", "Attractions", "Viewpoint", "Entertainment")
+            val activities = steps.filter { it.category in activityCategories }
             
             // A full day should have at least one activity. 
             // We'll be slightly lenient for the very first/last day if they are short.
@@ -85,15 +87,50 @@ object TripItineraryValidator {
         // 5. Valid coordinates
         chunk.days.flatMap { it.steps }.forEach { step ->
             if (step.lat == null || step.lon == null) {
-                // If it's a transport step, coordinates might be missing sometimes?
-                // But user wants real POI data.
-                if (step.category != "Transport" && step.category != "FreeTime") {
+                val nonActivityCategories = setOf("Transport", "FreeTime", "Accommodation")
+                if (step.category !in nonActivityCategories) {
                     errors.add("Step '${step.title}' is missing coordinates")
                 }
             }
         }
 
+        // 6. Semantic check: pure lodging POIs must not be used as non-accommodation steps
+        val attractionCategories = setOf("food", "activity", "nightlife", "shopping", "museum", "nature", "hiking", "beach", "attractions", "viewpoint", "entertainment", "cafe")
+        chunk.days.forEach { day ->
+            day.steps.forEach { step ->
+                if (step.category.trim().lowercase() in attractionCategories) {
+                    val matchingPoi = candidatePois.find { it.name.equals(step.title, ignoreCase = true) }
+                    if (matchingPoi != null && isPureLodging(matchingPoi)) {
+                        errors.add("Day ${day.dayNumber} ${step.category} step '${step.title}' resolves to a lodging-only POI, not an attraction. Choose a non-lodging candidate.")
+                    }
+                }
+            }
+        }
+
         return ValidationResult(errors.isEmpty(), errors)
+    }
+
+    fun isPureLodging(poi: com.ramble.core.ai.models.POI): Boolean {
+        val tags = poi.osmTags
+        val tourism = tags["tourism"]?.lowercase() ?: (if (poi.type == com.ramble.core.ai.models.POIType.ACCOMMODATION || poi.accommodationType != null || poi.category.equals("Accommodation", ignoreCase = true)) "hotel" else null)
+        val building = tags["building"]?.lowercase()
+        val amenity = tags["amenity"]?.lowercase()
+
+        val lodgingTourismValues = setOf("hotel", "hostel", "guest_house", "guesthouse", "motel", "apartment", "resort", "bed_and_breakfast", "chalet", "camp_site", "caravan_site")
+        val lodgingBuildingValues = setOf("hotel", "hostel")
+
+        val isLodging = (tourism != null && tourism in lodgingTourismValues) ||
+                (building != null && building in lodgingBuildingValues) ||
+                poi.type == com.ramble.core.ai.models.POIType.ACCOMMODATION ||
+                poi.accommodationType != null ||
+                poi.category.equals("Accommodation", ignoreCase = true)
+
+        if (!isLodging) return false
+
+        val validCoTagAmenities = setOf("restaurant", "bar", "pub", "cafe", "nightclub", "fast_food", "bistro")
+        val hasCoTag = amenity != null && amenity in validCoTagAmenities
+
+        return !hasCoTag
     }
 
     fun validateFinalItinerary(

@@ -64,7 +64,8 @@ class TripChunkPlanner(private val aiService: AiPlannerService) {
                 val validation = TripItineraryValidator.validateChunk(
                     itinerary,
                     chunkDef.startDay..chunkDef.endDay,
-                    expectedDates
+                    expectedDates,
+                    candidatePois = candidates + accommodationCandidates
                 )
 
                 if (validation.isValid) {

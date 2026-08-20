@@ -41,7 +41,7 @@ enum class AccommodationType {
 data class POI(
     val id: String,
     val name: String,
-    val category: String, // e.g. "Restaurant", "Museum", "Accommodation"
+    val category: String, // e.g. "Restaurant", "Museum", "Accommodation", "Shopping", "Nature", "Beach", "Nightlife"
     val coordinates: Coordinates,
     val type: POIType = POIType.GENERAL,
     val accommodationType: AccommodationType? = null,
@@ -55,7 +55,8 @@ data class POI(
     val rooms: Int? = null,
     val beds: Int? = null,
     val amenities: List<String> = emptyList(),
-    val relevanceScore: Double = 0.0 // Computed later by ranking engine
+    val relevanceScore: Double = 0.0, // Computed later by ranking engine
+    val osmTags: Map<String, String> = emptyMap()
 )
 
 enum class TransportMode {
