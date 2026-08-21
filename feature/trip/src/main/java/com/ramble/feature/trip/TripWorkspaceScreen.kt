@@ -310,19 +310,14 @@ fun TripWorkspaceScreen(
         }
     }
 
-    val velocityThresholdPx = with(density) { 50.dp.toPx() }
-    val decaySpec = rememberSplineBasedDecay<Float>()
     val draggableState = remember {
         AnchoredDraggableState(
             initialValue = SheetAnchor.DatePeek,
             anchors = anchors,
             positionalThreshold = { distance -> distance * 0.2f },
-            velocityThreshold = { velocityThresholdPx },
-            snapAnimationSpec = spring(
-                stiffness = Spring.StiffnessLow,
-                dampingRatio = Spring.DampingRatioLowBouncy
-            ),
-            decayAnimationSpec = decaySpec
+            velocityThreshold = { Float.MAX_VALUE },
+            snapAnimationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+            decayAnimationSpec = exponentialDecay()
         )
     }
 
