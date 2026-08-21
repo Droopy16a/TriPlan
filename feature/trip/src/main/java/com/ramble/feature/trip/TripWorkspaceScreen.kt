@@ -147,22 +147,16 @@ import com.ramble.core.ai.TripRepository
 import com.ramble.core.ai.TripStep
 import com.ramble.core.ai.AiPlannerService
 import com.ramble.core.ai.providers.GeocodingProvider
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import com.ramble.core.auth.AuthRepository
 import com.ramble.core.auth.AuthState
-import androidx.compose.foundation.gestures.AnchoredDraggableState
-import androidx.compose.foundation.gestures.DraggableAnchors
-import androidx.compose.foundation.gestures.anchoredDraggable
-import androidx.compose.foundation.gestures.animateTo
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.animation.core.DecayAnimationSpec
-import androidx.compose.animation.core.exponentialDecay
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.rememberSplineBasedDecay
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 
-// Three snap states for the custom bottom sheet on the trip page: DatePeek, Half screen, Full screen
-enum class SheetAnchor { DatePeek, Half, Full }
+enum class TripSheetHeightState {
+    DATE_BOX,      // State 1: Sheet stops right at end of date box (~145dp)
+    MIDDLE_SCREEN, // State 2: Sheet stops in the middle of the screen (50% screen height)
+    WHOLE_PAGE     // State 3: Sheet takes the whole page (95% screen height)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -171,20 +165,21 @@ fun TripWorkspaceScreen(
     transitionComplete: Boolean = true,
     onBackClick: () -> Unit
 ) {
+    val bottomSheetState = rememberStandardBottomSheetState(
+        initialValue = SheetValue.PartiallyExpanded
+    )
+    val scaffoldState = rememberBottomSheetScaffoldState(
+        bottomSheetState = bottomSheetState
+    )
     var maplibreMapRef by remember { mutableStateOf<MapLibreMap?>(null) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val density = LocalDensity.current
     val config = LocalConfiguration.current
-
-    // Screen height in px
-    val screenHeightPx = remember(density, config) {
-        with(density) { config.screenHeightDp.dp.roundToPx() }.toFloat()
-    }
-
-    // Map bottom padding tracks sheet height so the map "center" stays above the sheet
-    val bottomPaddingPx = remember(density, config) {
-        with(density) { (config.screenHeightDp * 0.35f).dp.roundToPx() }
+    
+    // Set padding to 75% of screen height to force the "center" into the top quarter
+    val bottomPaddingPx = remember(density, config) { 
+        with(density) { (config.screenHeightDp * 0.75f).dp.roundToPx() }
     }
     val boundsPaddingPx = remember(density) { with(density) { 40.dp.roundToPx() } }
 
@@ -193,9 +188,12 @@ fun TripWorkspaceScreen(
     ) { permissions ->
         val locationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        
         if (locationGranted) {
             maplibreMapRef?.let { map ->
-                map.style?.let { style -> enableLocation(context, map, style) }
+                map.style?.let { style ->
+                    enableLocation(context, map, style)
+                }
             }
         }
     }
@@ -203,10 +201,18 @@ fun TripWorkspaceScreen(
     val allTrips by TripRepository.trips.collectAsState()
     val authState by AuthRepository.authState.collectAsState()
     val currentUserId = (authState as? AuthState.Authenticated)?.userId
-    val currentTrip = remember(tripId, allTrips) {
+    val currentTrip = remember(tripId, allTrips) { 
         allTrips.find { it.id == tripId } ?: CommunityTripRepository.searchTrips("").find { it.id == tripId }
     }
     val isOwner = currentTrip?.userId == currentUserId
+    val tripName = currentTrip?.let { trip ->
+        if (trip.title.isNotBlank()) trip.title
+        else {
+            val city = trip.destination.substringBefore(",").trim()
+            val year = trip.itinerary?.days?.firstOrNull()?.date?.substringBefore("-") ?: "2026"
+            "$city $year"
+        }
+    } ?: "Kyoto 2026"
     val aiItinerary = currentTrip?.itinerary
     val geocodingProvider = remember(context) { AiPlannerService(context).geocodingProvider }
 
@@ -215,30 +221,40 @@ fun TripWorkspaceScreen(
 
     var isMapVisible by remember { mutableStateOf(false) }
 
-    // Update map only after the page has fully settled.
+    // Update map only after the page has fully settled — never mid-swipe.
+    // snapshotFlow emits null while scrolling is in progress; filterNotNull + distinctUntilChanged
+    // guarantee the expensive map work runs exactly once per page, after the finger lifts.
     LaunchedEffect(maplibreMapRef, aiItinerary, isMapVisible) {
         val map = maplibreMapRef ?: return@LaunchedEffect
         if (!isMapVisible) return@LaunchedEffect
+
         snapshotFlow { if (pagerState.isScrollInProgress) null else pagerState.currentPage }
             .filterNotNull()
             .distinctUntilChanged()
             .collect { currentPage ->
                 val style = map.style ?: return@collect
+
                 val currentDaySteps = if (aiItinerary != null) {
                     aiItinerary.days.getOrNull(currentPage)?.steps
-                        ?.filter { it.lat != null && it.lon != null } ?: emptyList()
+                        ?.filter { it.lat != null && it.lon != null }
+                        ?: emptyList()
                 } else {
+                    // Fallback for Day 1
                     if (currentPage == 0) {
                         listOf(
                             LatLng(49.0097, 2.5479) to "Paris CDG",
                             LatLng(34.4320, 135.2304) to "Osaka KIX",
                             LatLng(35.0116, 135.7681) to "Kyoto"
                         ).map { (pos, title) ->
-                            TripStep(time = "", title = title, description = "", category = "", lat = pos.latitude, lon = pos.longitude)
+                            TripStep(
+                                time = "", title = title, description = "", category = "",
+                                lat = pos.latitude, lon = pos.longitude
+                            )
                         }
                     } else emptyList()
                 }
 
+                // Update Route
                 val routeSource = style.getSourceAs<GeoJsonSource>("routes-source")
                 if (routeSource != null) {
                     val features = if (currentDaySteps.size > 1) {
@@ -248,17 +264,23 @@ fun TripWorkspaceScreen(
                     routeSource.setGeoJson(FeatureCollection.fromFeatures(features))
                 }
 
+                // Update Markers
                 val markerSource = style.getSourceAs<GeoJsonSource>("markers-source")
                 if (markerSource != null) {
                     val features = currentDaySteps.mapIndexed { index, step ->
                         val f = Feature.fromGeometry(Point.fromLngLat(step.lon!!, step.lat!!))
-                        val iconId = if (aiItinerary != null) "marker-$currentPage-$index" else "marker-fallback-$index"
+                        val iconId = if (aiItinerary != null) {
+                            "marker-$currentPage-$index"
+                        } else {
+                            "marker-fallback-$index"
+                        }
                         f.addStringProperty("icon-id", iconId)
                         f
                     }
                     markerSource.setGeoJson(FeatureCollection.fromFeatures(features))
                 }
 
+                // Zoom to bounds
                 if (currentDaySteps.isNotEmpty()) {
                     try {
                         if (currentDaySteps.size > 1) {
@@ -267,8 +289,12 @@ fun TripWorkspaceScreen(
                             }.build()
                             map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, boundsPaddingPx), 1000)
                         } else {
+                            // Single step — just zoom to it directly, no bounds needed
                             val step = currentDaySteps[0]
-                            map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(step.lat!!, step.lon!!), 16.0), 1000)
+                            map.animateCamera(
+                                CameraUpdateFactory.newLatLngZoom(LatLng(step.lat!!, step.lon!!), 16.0),
+                                1000
+                            )
                         }
                     } catch (e: Exception) {
                         Log.w("TripMap", "Camera update failed: ${e.message}")
@@ -277,286 +303,217 @@ fun TripWorkspaceScreen(
             }
     }
 
-    // --- 3-state bottom sheet anchors ---
-    // Heights of specific content sections, measured at layout time
-    var dateRowHeightPx by remember { mutableStateOf(0f) }
-    var dayBoxHeightPx  by remember { mutableStateOf(0f) }
+    // 3 Height States for the bottom sheet
+    var sheetHeightState by remember { mutableStateOf(TripSheetHeightState.MIDDLE_SCREEN) }
 
-    // Fixed structural heights (drag handle + title row + spacers)
-    val dragHandleHeightDp    = 32.dp   // BottomSheetDefaults.DragHandle vertical extent
-    val titleRowHeightDp      = 52.dp   // trip title + emoji
-    val titleBottomSpacerDp   = 10.dp
-    val tabRowHeightDp        = 52.dp
-    val tabBottomSpacerDp     = 16.dp
-    val dayBoxBottomSpacerDp  = 8.dp
-
-    val dragHandlePx  = with(density) { dragHandleHeightDp.toPx() }
-    val titleRowPx    = with(density) { titleRowHeightDp.toPx() }
-    val titleSpacerPx = with(density) { titleBottomSpacerDp.toPx() }
-    val tabRowPx      = with(density) { tabRowHeightDp.toPx() }
-    val tabSpacerPx   = with(density) { tabBottomSpacerDp.toPx() }
-    val daySpacerPx   = with(density) { dayBoxBottomSpacerDp.toPx() }
-
-    // Peek at Date row = drag handle + title + spacer + date row
-    val datePeekPx: Float = dragHandlePx + titleRowPx + titleSpacerPx + dateRowHeightPx
-    // Middle state = 50% screen height
-    val halfScreenTopPx: Float = screenHeightPx * 0.5f
-
-    val anchors = remember(screenHeightPx, datePeekPx, halfScreenTopPx) {
-        DraggableAnchors {
-            SheetAnchor.DatePeek at (screenHeightPx - datePeekPx).coerceAtLeast(0f)
-            SheetAnchor.Half     at halfScreenTopPx
-            SheetAnchor.Full     at 0f
-        }
-    }
-
-    val draggableState = remember {
-        AnchoredDraggableState(
-            initialValue = SheetAnchor.DatePeek,
-            anchors = anchors,
-            positionalThreshold = { distance -> distance * 0.2f },
-            velocityThreshold = { Float.MAX_VALUE },
-            snapAnimationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
-            decayAnimationSpec = exponentialDecay()
-        )
-    }
-
-    suspend fun snapToTarget(velocity: Float) {
-        val currentOffset = try { draggableState.requireOffset() } catch (_: Exception) { 0f }
-        val datePeekOffset = (screenHeightPx - datePeekPx).coerceAtLeast(0f)
-        val halfOffset = halfScreenTopPx
-        val fullOffset = 0f
-
-        val target = when {
-            velocity < -400f -> {
-                // Swiping UP fast
-                if (currentOffset > halfOffset + 80f) SheetAnchor.Half else SheetAnchor.Full
-            }
-            velocity > 400f -> {
-                // Swiping DOWN fast
-                if (currentOffset < halfOffset - 80f) SheetAnchor.Half else SheetAnchor.DatePeek
-            }
-            else -> {
-                // Gentle drag: pick closest anchor
-                val distDate = (currentOffset - datePeekOffset).absoluteValue
-                val distHalf = (currentOffset - halfOffset).absoluteValue
-                val distFull = (currentOffset - fullOffset).absoluteValue
-
-                val minDist = minOf(distDate, distHalf, distFull)
-                when (minDist) {
-                    distDate -> SheetAnchor.DatePeek
-                    distHalf -> SheetAnchor.Half
-                    else     -> SheetAnchor.Full
-                }
-            }
-        }
-        draggableState.animateTo(target)
-    }
-
-    // Connect nested scroll (LazyColumn inside sheet <-> sheet drag) for smooth stretchy flinging
-    val sheetNestedScrollConnection = remember(draggableState) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                val delta = available.y
-                return if (delta < 0 && draggableState.currentValue != SheetAnchor.Full) {
-                    val consumed = draggableState.dispatchRawDelta(delta)
-                    Offset(0f, consumed)
-                } else {
-                    Offset.Zero
-                }
-            }
-
-            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                val delta = available.y
-                return if (delta > 0) {
-                    val consumed = draggableState.dispatchRawDelta(delta)
-                    Offset(0f, consumed)
-                } else {
-                    Offset.Zero
-                }
-            }
-
-            override suspend fun onPreFling(available: Velocity): Velocity {
-                val toFling = available.y
-                if (toFling < 0 && draggableState.currentValue != SheetAnchor.Full) {
-                    snapToTarget(toFling)
-                    return available
-                }
-                return Velocity.Zero
-            }
-
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                snapToTarget(available.y)
-                return available
-            }
-        }
-    }
-
-    // Sync anchors whenever measured heights change
-    LaunchedEffect(anchors) {
-        draggableState.updateAnchors(anchors)
-    }
-
-    // Sheet reveal animation after transition
     var sheetReady by remember { mutableStateOf(false) }
-    LaunchedEffect(transitionComplete) {
-        if (transitionComplete) {
-            kotlinx.coroutines.delay(100)
-            sheetReady = true
+
+    val dateBoxHeightDp = 145.dp
+    val middleScreenHeightDp = (config.screenHeightDp * 0.50f).dp
+    val wholePageHeightDp = (config.screenHeightDp * 0.95f).dp
+
+    val targetPeekDp = remember(sheetReady, sheetHeightState, config.screenHeightDp) {
+        if (!sheetReady) 0.dp
+        else when (sheetHeightState) {
+            TripSheetHeightState.DATE_BOX -> dateBoxHeightDp
+            TripSheetHeightState.MIDDLE_SCREEN -> middleScreenHeightDp
+            TripSheetHeightState.WHOLE_PAGE -> wholePageHeightDp
         }
     }
-    // Snap to DatePeek once ready (mimics old sheetPeekHeight animation)
-    LaunchedEffect(sheetReady) {
-        if (sheetReady) {
-            draggableState.animateTo(SheetAnchor.DatePeek)
-        }
+
+    val sheetPeekHeight by animateDpAsState(
+        targetValue = targetPeekDp,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "sheetPeekHeight"
+    )
+
+    LaunchedEffect(transitionComplete) {
+        if (transitionComplete) sheetReady = true
     }
 
     BackHandler(enabled = transitionComplete) {
-        when (draggableState.currentValue) {
-            SheetAnchor.Full     -> scope.launch { draggableState.animateTo(SheetAnchor.Half) }
-            SheetAnchor.Half     -> scope.launch { draggableState.animateTo(SheetAnchor.DatePeek) }
-            SheetAnchor.DatePeek -> onBackClick()
+        when (sheetHeightState) {
+            TripSheetHeightState.WHOLE_PAGE -> sheetHeightState = TripSheetHeightState.MIDDLE_SCREEN
+            TripSheetHeightState.MIDDLE_SCREEN -> sheetHeightState = TripSheetHeightState.DATE_BOX
+            TripSheetHeightState.DATE_BOX -> onBackClick()
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        // --- Map ---
-        AndroidView(
-            factory = { ctx ->
-                MapLibre.getInstance(ctx)
-                val options = MapLibreMapOptions.createFromAttributes(ctx, null).textureMode(true)
-                MapView(ctx, options).apply {
-                    getMapAsync { map ->
-                        maplibreMapRef = map
-                        map.setPadding(0, 0, 0, bottomPaddingPx)
-                        map.uiSettings.isCompassEnabled = false
-                        map.uiSettings.isLogoEnabled = false
-                        map.uiSettings.isAttributionEnabled = false
-                        map.setStyle("https://tiles.openfreemap.org/styles/liberty") { style ->
-                            val typeface = ResourcesCompat.getFont(ctx, com.ramble.core.designsystem.R.font.poppins_semibold)
-                            aiItinerary?.days?.forEachIndexed { dayIdx, day ->
-                                day.steps.forEachIndexed { stepIdx, step ->
-                                    val bitmap = createCustomMarkerBitmap(ctx, step.title, typeface)
-                                    style.addImage("marker-$dayIdx-$stepIdx", bitmap)
-                                }
-                            }
-                            listOf("Paris CDG", "Osaka KIX", "Kyoto").forEachIndexed { i, label ->
-                                style.addImage("marker-fallback-$i", createCustomMarkerBitmap(ctx, label, typeface))
-                            }
-                            style.addSource(GeoJsonSource("routes-source"))
-                            style.addSource(GeoJsonSource("markers-source"))
-                            style.addLayer(LineLayer("routes-layer", "routes-source").withProperties(
-                                PropertyFactory.lineColor("#2B2D42"),
-                                PropertyFactory.lineWidth(2f),
-                                PropertyFactory.lineDasharray(arrayOf(2f, 2f)),
-                                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
-                                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
-                            ))
-                            style.addLayer(SymbolLayer("markers-layer", "markers-source").withProperties(
-                                PropertyFactory.iconImage(Expression.get("icon-id")),
-                                PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
-                                PropertyFactory.iconOffset(arrayOf(0f, 4f)),
-                                PropertyFactory.iconAllowOverlap(true)
-                            ))
-                            isMapVisible = true
-                            if (ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                                enableLocation(ctx, map, style)
-                            } else {
-                                val permissions = mutableListOf(
-                                    Manifest.permission.ACCESS_FINE_LOCATION,
-                                    Manifest.permission.ACCESS_COARSE_LOCATION
+    BottomSheetScaffold(
+        scaffoldState = scaffoldState,
+        sheetPeekHeight = sheetPeekHeight,
+        sheetShape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
+        sheetContainerColor = Color.White,
+        containerColor = Color.White,
+        sheetDragHandle = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        sheetHeightState = when (sheetHeightState) {
+                            TripSheetHeightState.DATE_BOX -> TripSheetHeightState.MIDDLE_SCREEN
+                            TripSheetHeightState.MIDDLE_SCREEN -> TripSheetHeightState.WHOLE_PAGE
+                            TripSheetHeightState.WHOLE_PAGE -> TripSheetHeightState.DATE_BOX
+                        }
+                    }
+                    .padding(vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                BottomSheetDefaults.DragHandle()
+            }
+        },
+        sheetContent = {
+            TripSheetContent(
+                tripId = tripId,
+                isOwner = isOwner,
+                pagerState = pagerState,
+                geocodingProvider = geocodingProvider,
+                sheetHeightState = sheetHeightState,
+                onStateChange = { newState -> sheetHeightState = newState },
+                onTripDeleted = onBackClick,
+                onLocationSelected = { point ->
+                    sheetHeightState = TripSheetHeightState.DATE_BOX
+                    scope.launch {
+                        val map = maplibreMapRef
+                        if (map != null) {
+                            val currentCenter = map.cameraPosition.target
+                            val distance = currentCenter?.distanceTo(point) ?: 0.0
+
+                            if (distance > 100_000 && currentCenter != null) {
+                                val bounds = LatLngBounds.Builder()
+                                    .include(currentCenter)
+                                    .include(point)
+                                    .build()
+                                map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 160), 800)
+                                kotlinx.coroutines.delay(800)
+
+                                map.animateCamera(
+                                    CameraPosition.Builder()
+                                        .target(point)
+                                        .zoom(16.0)
+                                        .bearing(0.0)
+                                        .tilt(0.0)
+                                        .build().let { CameraUpdateFactory.newCameraPosition(it) },
+                                    700
                                 )
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                                permissionLauncher.launch(permissions.toTypedArray())
+                            } else {
+                                map.animateCamera(
+                                    CameraPosition.Builder()
+                                        .target(point)
+                                        .zoom(16.0)
+                                        .bearing(0.0)
+                                        .tilt(0.0)
+                                        .build().let { CameraUpdateFactory.newCameraPosition(it) },
+                                    1000
+                                )
                             }
                         }
                     }
                 }
-            },
-            update = {},
-            onRelease = { view -> view.onDestroy() },
-            modifier = Modifier.fillMaxSize()
-        )
-
-        if (!isMapVisible) {
-            Box(modifier = Modifier.fillMaxSize().background(OffWhite))
+            )
         }
+    ) { innerPadding ->
+        Box(modifier = Modifier.fillMaxSize()) {
+            AndroidView(
+                factory = { ctx ->
+                    MapLibre.getInstance(ctx)
+                    val options = MapLibreMapOptions.createFromAttributes(ctx, null)
+                        .textureMode(true)
 
-        // --- Back button ---
-        AnimatedVisibility(
-            visible = transitionComplete,
-            enter = fadeIn(animationSpec = tween(300))
-        ) {
-            FilledIconButton(
-                onClick = { clickWithDelay(scope, onClick = onBackClick) },
-                colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color.White, contentColor = DeepGraphite),
-                modifier = Modifier
-                    .statusBarsPadding()
-                    .padding(top = 16.dp, start = 16.dp)
-                    .size(48.dp)
-                    .shadow(15.dp, RoundedCornerShape(50), spotColor = Color.Black.copy(alpha = 0.5f))
-                    .align(Alignment.TopStart)
-            ) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-            }
-        }
+                    MapView(ctx, options).apply {
+                        getMapAsync { map ->
+                            maplibreMapRef = map
+                            map.setPadding(0, 0, 0, bottomPaddingPx)
+                            map.uiSettings.isCompassEnabled = false
+                            map.uiSettings.isLogoEnabled = false
+                            map.uiSettings.isAttributionEnabled = false
+                            
+                            map.setStyle("https://tiles.openfreemap.org/styles/liberty") { style ->
+                                // Load typeface once — ResourcesCompat.getFont() hits asset I/O
+                                // and must not be called per-bitmap inside the loop.
+                                val typeface = ResourcesCompat.getFont(
+                                    ctx, com.ramble.core.designsystem.R.font.poppins_semibold
+                                )
 
-        // --- Custom 3-state bottom sheet ---
-        if (sheetReady) {
-            val sheetOffsetY = draggableState.requireOffset()
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .offset { IntOffset(x = 0, y = sheetOffsetY.toInt()) }
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight()
-                        .nestedScroll(sheetNestedScrollConnection)
-                        .anchoredDraggable(
-                            state = draggableState,
-                            orientation = androidx.compose.foundation.gestures.Orientation.Vertical
-                        ),
-                    shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
-                    color = Color.White,
-                    shadowElevation = 8.dp
-                ) {
-                    TripSheetContent(
-                        tripId = tripId,
-                        isOwner = isOwner,
-                        pagerState = pagerState,
-                        geocodingProvider = geocodingProvider,
-                        onTripDeleted = onBackClick,
-                        onDateRowMeasured = { heightPx -> dateRowHeightPx = heightPx },
-                        onDayBoxMeasured  = { heightPx -> dayBoxHeightPx  = heightPx },
-                        onLocationSelected = { point ->
-                            scope.launch {
-                                draggableState.animateTo(SheetAnchor.DatePeek)
-                                val map = maplibreMapRef
-                                if (map != null) {
-                                    val currentCenter = map.cameraPosition.target
-                                    val distance = currentCenter?.distanceTo(point) ?: 0.0
-                                    if (distance > 100_000 && currentCenter != null) {
-                                        val bounds = LatLngBounds.Builder()
-                                            .include(currentCenter).include(point).build()
-                                        map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 160), 800)
-                                        kotlinx.coroutines.delay(800)
-                                        map.animateCamera(CameraUpdateFactory.newCameraPosition(
-                                            CameraPosition.Builder().target(point).zoom(16.0).bearing(0.0).tilt(0.0).build()
-                                        ), 700)
-                                    } else {
-                                        map.animateCamera(CameraUpdateFactory.newCameraPosition(
-                                            CameraPosition.Builder().target(point).zoom(16.0).bearing(0.0).tilt(0.0).build()
-                                        ), 1000)
+                                // Add ALL potential images to style
+                                aiItinerary?.days?.forEachIndexed { dayIdx, day ->
+                                    day.steps.forEachIndexed { stepIdx, step ->
+                                        val bitmap = createCustomMarkerBitmap(ctx, step.title, typeface)
+                                        style.addImage("marker-$dayIdx-$stepIdx", bitmap)
                                     }
+                                }
+
+                                // Fallback images
+                                listOf("Paris CDG", "Osaka KIX", "Kyoto").forEachIndexed { i, label ->
+                                    style.addImage("marker-fallback-$i", createCustomMarkerBitmap(ctx, label, typeface))
+                                }
+
+                                // Sources
+                                style.addSource(GeoJsonSource("routes-source"))
+                                style.addSource(GeoJsonSource("markers-source"))
+
+                                // Layers
+                                style.addLayer(LineLayer("routes-layer", "routes-source").withProperties(
+                                    PropertyFactory.lineColor("#2B2D42"),
+                                    PropertyFactory.lineWidth(2f),
+                                    PropertyFactory.lineDasharray(arrayOf(2f, 2f)),
+                                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                                    PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+                                ))
+
+                                style.addLayer(SymbolLayer("markers-layer", "markers-source").withProperties(
+                                    PropertyFactory.iconImage(Expression.get("icon-id")),
+                                    PropertyFactory.iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+                                    PropertyFactory.iconOffset(arrayOf(0f, 4f)),
+                                    PropertyFactory.iconAllowOverlap(true)
+                                ))
+
+                                isMapVisible = true
+
+                                // Enable user location
+                                if (ctx.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                                    enableLocation(ctx, map, style)
+                                } else {
+                                    val permissions = mutableListOf(
+                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                    )
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                                    }
+                                    permissionLauncher.launch(permissions.toTypedArray())
                                 }
                             }
                         }
-                    )
+                    }
+                },
+                update = { view -> },
+                onRelease = { view -> view.onDestroy() },
+                modifier = Modifier.fillMaxSize()
+            )
+
+            if (!isMapVisible) {
+                Box(modifier = Modifier.fillMaxSize().background(OffWhite))
+            }
+
+            AnimatedVisibility(
+                visible = transitionComplete,
+                enter = fadeIn(animationSpec = tween(300))
+            ) {
+                FilledIconButton(
+                    onClick = { clickWithDelay(scope, onClick = onBackClick) },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = Color.White,
+                        contentColor = DeepGraphite
+                    ),
+                    modifier = Modifier
+                        .statusBarsPadding()
+                        .padding(top = 16.dp, start = 16.dp)
+                        .size(48.dp)
+                        .shadow(15.dp, RoundedCornerShape(50), spotColor = Color.Black.copy(alpha = 0.5f))
+                        .align(Alignment.TopStart)
+                ) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                 }
             }
         }
@@ -569,9 +526,9 @@ fun TripSheetContent(
     isOwner: Boolean = false,
     pagerState: PagerState,
     geocodingProvider: GeocodingProvider,
+    sheetHeightState: TripSheetHeightState = TripSheetHeightState.MIDDLE_SCREEN,
+    onStateChange: (TripSheetHeightState) -> Unit = {},
     onTripDeleted: () -> Unit = {},
-    onDateRowMeasured: (Float) -> Unit = {},
-    onDayBoxMeasured: (Float) -> Unit = {},
     onLocationSelected: (LatLng) -> Unit
 ) {
     val allTrips by TripRepository.trips.collectAsState()
@@ -619,28 +576,23 @@ fun TripSheetContent(
         TripRepository.memberAvatarUrlsForTrip(currentTrip)
     }
 
+    val stopFlingCollapseConnection = remember {
+        object : NestedScrollConnection {
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                return available
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .fillMaxHeight()
+            .fillMaxHeight(0.85f)
             .background(Color.White)
             .navigationBarsPadding()
+            .nestedScroll(stopFlingCollapseConnection)
     ) {
-        // Drag handle
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp, bottom = 8.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(36.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Color.Black.copy(alpha = 0.15f))
-            )
-        }
+        Spacer(modifier = Modifier.height(8.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
@@ -750,12 +702,7 @@ fun TripSheetContent(
         Spacer(modifier = Modifier.height(10.dp))
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .onGloballyPositioned { coordinates ->
-                    onDateRowMeasured(coordinates.size.height.toFloat())
-                },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -772,7 +719,6 @@ fun TripSheetContent(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
 
         TabRow(
             selectedTabIndex = selectedTabIndex,
@@ -816,7 +762,6 @@ fun TripSheetContent(
                 pagerState = pagerState,
                 geocodingProvider = geocodingProvider,
                 onLocationSelected = onLocationSelected,
-                onDayBoxMeasured = onDayBoxMeasured,
                 onAddToExpenses = { title, amount ->
                     prefilledTitle = title
                     prefilledAmount = amount
@@ -1164,7 +1109,6 @@ fun ItineraryView(
     pagerState: PagerState,
     geocodingProvider: GeocodingProvider,
     onLocationSelected: (LatLng) -> Unit,
-    onDayBoxMeasured: (Float) -> Unit = {},
     onAddToExpenses: (String, Double) -> Unit = { _, _ -> }
 ) {
     val dayCount = itinerary?.days?.size ?: 1
@@ -1195,12 +1139,6 @@ fun ItineraryView(
                                 }
                                 .background(UIBackgroundGray.copy(alpha = 0.5f))
                                 .padding(horizontal = 32.dp, vertical = 20.dp)
-                                // Measure the day box on the first page only
-                                .then(
-                                    if (pageIndex == 0) Modifier.onGloballyPositioned { coords ->
-                                        onDayBoxMeasured(coords.size.height.toFloat())
-                                    } else Modifier
-                                )
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1221,9 +1159,9 @@ fun ItineraryView(
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     day.temperature?.let { temp ->
                                         val (weatherIcon, iconColor) = when (day.weatherCondition?.lowercase()) {
-                                            "cloudy" -> Icons.Default.Cloud to Color(0xFF90A4AE)
-                                            "rainy", "stormy" -> Icons.Default.WaterDrop to Color(0xFF4FC3F7)
-                                            else -> Icons.Default.WbSunny to Color(0xFFFDB813)
+                                            "cloudy" -> Icons.Default.Cloud to Color(0xFF90A4AE) // Blue Grey
+                                            "rainy", "stormy" -> Icons.Default.WaterDrop to Color(0xFF4FC3F7) // Light Blue
+                                            else -> Icons.Default.WbSunny to Color(0xFFFDB813) // Yellow
                                         }
                                         Icon(imageVector = weatherIcon, contentDescription = day.weatherCondition, tint = iconColor, modifier = Modifier.size(18.dp))
                                         Text(text = temp, style = MaterialTheme.typography.bodyMedium, color = DeepGraphite.copy(alpha = 0.8f))
