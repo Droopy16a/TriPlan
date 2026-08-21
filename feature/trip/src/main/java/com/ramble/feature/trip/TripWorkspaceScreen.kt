@@ -157,6 +157,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.core.DecayAnimationSpec
 import androidx.compose.animation.core.exponentialDecay
+import androidx.compose.animation.core.Spring
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 
 // Three snap states for the custom bottom sheet on the trip page: DatePeek, Half screen, Full screen
 enum class SheetAnchor { DatePeek, Half, Full }
@@ -307,16 +309,58 @@ fun TripWorkspaceScreen(
         }
     }
 
-    val velocityThresholdPx = with(density) { 150.dp.toPx() }
+    val velocityThresholdPx = with(density) { 50.dp.toPx() }
     val draggableState = remember {
         AnchoredDraggableState(
             initialValue = SheetAnchor.DatePeek,
             anchors = anchors,
-            positionalThreshold = { distance -> distance * 0.35f },
+            positionalThreshold = { distance -> distance * 0.2f },
             velocityThreshold = { velocityThresholdPx },
-            snapAnimationSpec = spring(stiffness = 400f, dampingRatio = 0.8f),
+            snapAnimationSpec = spring(
+                stiffness = Spring.StiffnessLow,
+                dampingRatio = Spring.DampingRatioLowBouncy
+            ),
             decayAnimationSpec = exponentialDecay()
         )
+    }
+
+    // Connect nested scroll (LazyColumn inside sheet <-> sheet drag) for smooth stretchy flinging
+    val sheetNestedScrollConnection = remember(draggableState) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val delta = available.y
+                return if (delta < 0 && draggableState.currentValue != SheetAnchor.Full) {
+                    val consumed = draggableState.dispatchRawDelta(delta)
+                    Offset(0f, consumed)
+                } else {
+                    Offset.Zero
+                }
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                val delta = available.y
+                return if (delta > 0) {
+                    val consumed = draggableState.dispatchRawDelta(delta)
+                    Offset(0f, consumed)
+                } else {
+                    Offset.Zero
+                }
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                val toFling = available.y
+                if (toFling < 0 && draggableState.currentValue != SheetAnchor.Full) {
+                    draggableState.settle(toFling)
+                    return available
+                }
+                return Velocity.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                draggableState.settle(available.y)
+                return available
+            }
+        }
     }
 
     // Sync anchors whenever measured heights change
@@ -443,6 +487,7 @@ fun TripWorkspaceScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .fillMaxHeight()
+                        .nestedScroll(sheetNestedScrollConnection)
                         .anchoredDraggable(
                             state = draggableState,
                             orientation = androidx.compose.foundation.gestures.Orientation.Vertical
