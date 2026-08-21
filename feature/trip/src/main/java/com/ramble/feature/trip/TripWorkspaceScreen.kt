@@ -158,8 +158,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.core.DecayAnimationSpec
 import androidx.compose.animation.core.exponentialDecay
 
-// Three snap states for the custom bottom sheet on the trip page
-enum class SheetAnchor { DatePeek, DayPeek, Full }
+// Three snap states for the custom bottom sheet on the trip page: DatePeek, Half screen, Full screen
+enum class SheetAnchor { DatePeek, Half, Full }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -296,13 +296,13 @@ fun TripWorkspaceScreen(
 
     // Peek at Date row = drag handle + title + spacer + date row
     val datePeekPx: Float = dragHandlePx + titleRowPx + titleSpacerPx + dateRowHeightPx
-    // Peek at Day box = date peek + tab row + tab spacer + day box + day spacer
-    val dayPeekPx: Float  = datePeekPx + tabRowPx + tabSpacerPx + dayBoxHeightPx + daySpacerPx
+    // Middle state = 50% screen height
+    val halfScreenTopPx: Float = screenHeightPx * 0.5f
 
-    val anchors = remember(screenHeightPx, datePeekPx, dayPeekPx) {
+    val anchors = remember(screenHeightPx, datePeekPx, halfScreenTopPx) {
         DraggableAnchors {
             SheetAnchor.DatePeek at (screenHeightPx - datePeekPx).coerceAtLeast(0f)
-            SheetAnchor.DayPeek  at (screenHeightPx - dayPeekPx).coerceAtLeast(0f)
+            SheetAnchor.Half     at halfScreenTopPx
             SheetAnchor.Full     at 0f
         }
     }
@@ -341,8 +341,8 @@ fun TripWorkspaceScreen(
 
     BackHandler(enabled = transitionComplete) {
         when (draggableState.currentValue) {
-            SheetAnchor.Full    -> scope.launch { draggableState.animateTo(SheetAnchor.DayPeek) }
-            SheetAnchor.DayPeek -> scope.launch { draggableState.animateTo(SheetAnchor.DatePeek) }
+            SheetAnchor.Full     -> scope.launch { draggableState.animateTo(SheetAnchor.Half) }
+            SheetAnchor.Half     -> scope.launch { draggableState.animateTo(SheetAnchor.DatePeek) }
             SheetAnchor.DatePeek -> onBackClick()
         }
     }
