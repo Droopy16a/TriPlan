@@ -158,6 +158,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.core.DecayAnimationSpec
 import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 
 // Three snap states for the custom bottom sheet on the trip page: DatePeek, Half screen, Full screen
@@ -310,6 +311,7 @@ fun TripWorkspaceScreen(
     }
 
     val velocityThresholdPx = with(density) { 50.dp.toPx() }
+    val decaySpec = rememberSplineBasedDecay<Float>()
     val draggableState = remember {
         AnchoredDraggableState(
             initialValue = SheetAnchor.DatePeek,
@@ -320,8 +322,40 @@ fun TripWorkspaceScreen(
                 stiffness = Spring.StiffnessLow,
                 dampingRatio = Spring.DampingRatioLowBouncy
             ),
-            decayAnimationSpec = exponentialDecay()
+            decayAnimationSpec = decaySpec
         )
+    }
+
+    suspend fun snapToTarget(velocity: Float) {
+        val currentOffset = try { draggableState.requireOffset() } catch (_: Exception) { 0f }
+        val datePeekOffset = (screenHeightPx - datePeekPx).coerceAtLeast(0f)
+        val halfOffset = halfScreenTopPx
+        val fullOffset = 0f
+
+        val target = when {
+            velocity < -400f -> {
+                // Swiping UP fast
+                if (currentOffset > halfOffset + 80f) SheetAnchor.Half else SheetAnchor.Full
+            }
+            velocity > 400f -> {
+                // Swiping DOWN fast
+                if (currentOffset < halfOffset - 80f) SheetAnchor.Half else SheetAnchor.DatePeek
+            }
+            else -> {
+                // Gentle drag: pick closest anchor
+                val distDate = (currentOffset - datePeekOffset).absoluteValue
+                val distHalf = (currentOffset - halfOffset).absoluteValue
+                val distFull = (currentOffset - fullOffset).absoluteValue
+
+                val minDist = minOf(distDate, distHalf, distFull)
+                when (minDist) {
+                    distDate -> SheetAnchor.DatePeek
+                    distHalf -> SheetAnchor.Half
+                    else     -> SheetAnchor.Full
+                }
+            }
+        }
+        draggableState.animateTo(target)
     }
 
     // Connect nested scroll (LazyColumn inside sheet <-> sheet drag) for smooth stretchy flinging
@@ -350,14 +384,14 @@ fun TripWorkspaceScreen(
             override suspend fun onPreFling(available: Velocity): Velocity {
                 val toFling = available.y
                 if (toFling < 0 && draggableState.currentValue != SheetAnchor.Full) {
-                    draggableState.settle(toFling)
+                    snapToTarget(toFling)
                     return available
                 }
                 return Velocity.Zero
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                draggableState.settle(available.y)
+                snapToTarget(available.y)
                 return available
             }
         }
