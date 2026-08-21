@@ -147,16 +147,8 @@ import com.ramble.core.ai.TripRepository
 import com.ramble.core.ai.TripStep
 import com.ramble.core.ai.AiPlannerService
 import com.ramble.core.ai.providers.GeocodingProvider
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.Spring
 import com.ramble.core.auth.AuthRepository
 import com.ramble.core.auth.AuthState
-
-enum class TripSheetHeightState {
-    DATE_BOX,      // State 1: Sheet stops right at end of date box (~145dp)
-    MIDDLE_SCREEN, // State 2: Sheet stops in the middle of the screen (50% screen height)
-    WHOLE_PAGE     // State 3: Sheet takes the whole page (95% screen height)
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -303,39 +295,22 @@ fun TripWorkspaceScreen(
             }
     }
 
-    // 3 Height States for the bottom sheet
-    var sheetHeightState by remember { mutableStateOf(TripSheetHeightState.MIDDLE_SCREEN) }
-
+    // Sheet and UI only appear after the transition animation completes
     var sheetReady by remember { mutableStateOf(false) }
-
-    val dateBoxHeightDp = 145.dp
-    val middleScreenHeightDp = (config.screenHeightDp * 0.50f).dp
-    val wholePageHeightDp = (config.screenHeightDp * 0.95f).dp
-
-    val targetPeekDp = remember(sheetReady, sheetHeightState, config.screenHeightDp) {
-        if (!sheetReady) 0.dp
-        else when (sheetHeightState) {
-            TripSheetHeightState.DATE_BOX -> dateBoxHeightDp
-            TripSheetHeightState.MIDDLE_SCREEN -> middleScreenHeightDp
-            TripSheetHeightState.WHOLE_PAGE -> wholePageHeightDp
-        }
-    }
-
     val sheetPeekHeight by animateDpAsState(
-        targetValue = targetPeekDp,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        targetValue = if (sheetReady) 350.dp else 0.dp,
+        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
         label = "sheetPeekHeight"
     )
-
     LaunchedEffect(transitionComplete) {
         if (transitionComplete) sheetReady = true
     }
 
     BackHandler(enabled = transitionComplete) {
-        when (sheetHeightState) {
-            TripSheetHeightState.WHOLE_PAGE -> sheetHeightState = TripSheetHeightState.MIDDLE_SCREEN
-            TripSheetHeightState.MIDDLE_SCREEN -> sheetHeightState = TripSheetHeightState.DATE_BOX
-            TripSheetHeightState.DATE_BOX -> onBackClick()
+        if (scaffoldState.bottomSheetState.currentValue == SheetValue.Expanded) {
+            scope.launch { scaffoldState.bottomSheetState.partialExpand() }
+        } else {
+            onBackClick()
         }
     }
 
@@ -345,36 +320,20 @@ fun TripWorkspaceScreen(
         sheetShape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
         sheetContainerColor = Color.White,
         containerColor = Color.White,
-        sheetDragHandle = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        sheetHeightState = when (sheetHeightState) {
-                            TripSheetHeightState.DATE_BOX -> TripSheetHeightState.MIDDLE_SCREEN
-                            TripSheetHeightState.MIDDLE_SCREEN -> TripSheetHeightState.WHOLE_PAGE
-                            TripSheetHeightState.WHOLE_PAGE -> TripSheetHeightState.DATE_BOX
-                        }
-                    }
-                    .padding(vertical = 6.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                BottomSheetDefaults.DragHandle()
-            }
-        },
+        sheetDragHandle = { BottomSheetDefaults.DragHandle() },
         sheetContent = {
             TripSheetContent(
                 tripId = tripId,
                 isOwner = isOwner,
                 pagerState = pagerState,
                 geocodingProvider = geocodingProvider,
-                sheetHeightState = sheetHeightState,
-                onStateChange = { newState -> sheetHeightState = newState },
                 onTripDeleted = onBackClick,
                 onLocationSelected = { point ->
-                    sheetHeightState = TripSheetHeightState.DATE_BOX
                     scope.launch {
+                        scaffoldState.bottomSheetState.partialExpand()
+
                         val map = maplibreMapRef
+
                         if (map != null) {
                             val currentCenter = map.cameraPosition.target
                             val distance = currentCenter?.distanceTo(point) ?: 0.0
@@ -388,22 +347,26 @@ fun TripWorkspaceScreen(
                                 kotlinx.coroutines.delay(800)
 
                                 map.animateCamera(
-                                    CameraPosition.Builder()
-                                        .target(point)
-                                        .zoom(16.0)
-                                        .bearing(0.0)
-                                        .tilt(0.0)
-                                        .build().let { CameraUpdateFactory.newCameraPosition(it) },
+                                    CameraUpdateFactory.newCameraPosition(
+                                        CameraPosition.Builder()
+                                            .target(point)
+                                            .zoom(16.0)
+                                            .bearing(0.0)
+                                            .tilt(0.0)
+                                            .build()
+                                    ),
                                     700
                                 )
                             } else {
                                 map.animateCamera(
-                                    CameraPosition.Builder()
-                                        .target(point)
-                                        .zoom(16.0)
-                                        .bearing(0.0)
-                                        .tilt(0.0)
-                                        .build().let { CameraUpdateFactory.newCameraPosition(it) },
+                                    CameraUpdateFactory.newCameraPosition(
+                                        CameraPosition.Builder()
+                                            .target(point)
+                                            .zoom(16.0)
+                                            .bearing(0.0)
+                                            .tilt(0.0)
+                                            .build()
+                                    ),
                                     1000
                                 )
                             }
@@ -526,8 +489,6 @@ fun TripSheetContent(
     isOwner: Boolean = false,
     pagerState: PagerState,
     geocodingProvider: GeocodingProvider,
-    sheetHeightState: TripSheetHeightState = TripSheetHeightState.MIDDLE_SCREEN,
-    onStateChange: (TripSheetHeightState) -> Unit = {},
     onTripDeleted: () -> Unit = {},
     onLocationSelected: (LatLng) -> Unit
 ) {
